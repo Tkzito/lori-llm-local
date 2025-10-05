@@ -9,6 +9,22 @@ Lori é uma assistente de linha de comando que utiliza seu Ollama local para exe
 - Ollama rodando localmente (https://ollama.com)
 - (Opcional) Chave SSH configurada para pushes ao GitHub
 
+### Preparando o Ollama e o modelo local
+
+1. Instale o Ollama conforme o sistema operacional:
+   - **Linux**: `curl -fsSL https://ollama.com/install.sh | sh`
+   - **macOS/Windows**: baixe o instalador gráfico em <https://ollama.com/download>.
+2. Garanta que o serviço `ollama serve` esteja em execução (no Linux ele inicia automaticamente após a instalação).
+3. Faça o download do modelo que a Lori utilizará (ex.: `mistral`):
+   ```bash
+   ollama pull mistral
+   ```
+4. Teste o modelo localmente para confirmar que está respondendo:
+   ```bash
+   ollama run mistral "Qual a capital do Brasil?"
+   ```
+5. Caso deseje outro modelo (por exemplo `llama3`), repita o `ollama pull` com o nome desejado e ajuste a variável `ASSISTANT_MODEL` nas próximas etapas.
+
 ## Instalação
 
 ```bash
