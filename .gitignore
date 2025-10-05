@@ -1,0 +1,13 @@
+# Virtual environments
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Test artifacts
+.pytest_cache/
+
+# Editor/OS files
+.DS_Store
+*.swp
