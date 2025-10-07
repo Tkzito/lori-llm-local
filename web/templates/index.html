@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lori</title>
+    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="icon" href="/static/favicon.png" type="image/png" />
+  </head>
+  <body>
+    <div class="chat-container">
+      <div id="chat-log" class="chat-log"></div>
+    </div>
+    <div class="input-container">
+      <form id="chat-form" method="POST">
+        <textarea id="message" name="message" rows="1" required placeholder="Converse com a Lori..."></textarea>
+        <button type="submit">Enviar</button>
+      </form>
+    </div>
+    <!-- Biblioteca para renderizar Markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

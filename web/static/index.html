@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lori Assistant</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" href="/static/favicon.png" type="image/png">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+    <div class="main-container">
+        <div class="sidebar left-sidebar collapsed" id="history-panel">
+            <div class="history-header">
+                <button id="new-chat-btn" title="Nova Conversa">➕ Nova Conversa</button>
+                <h2>Histórico</h2>
+                <button id="clear-history-btn" title="Limpar todo o histórico">🗑️</button>
+            </div>
+            <div id="history">
+                <div class="history-entry"><em>Carregando histórico...</em></div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="top-bar">
+                <button class="sidebar-toggle" id="toggle-history-btn" title="Histórico"><span>☰</span></button>
+                <h1>Lori Assistant</h1>
+            </div>
+            <div class="chat-container">
+                <div id="conversation">
+                    <div class="message assistant-message">
+                        <strong>Lori</strong>
+                        <div>Olá! Como posso ajudar hoje?</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="input-container">
+                <div class="input-wrapper">
+                    <form id="chat-form">
+                        <textarea id="message-input" placeholder="Digite sua mensagem..." rows="1"></textarea>
+                        <button type="submit" id="send-button" title="Enviar" disabled>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="icon">
+                                <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
+                            </svg>
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar right-sidebar" id="agent-panel">
+            <div class="agent-header">Raciocínio do Agente</div>
+            <div class="agent-log" id="agent-log"></div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+[assistant]
+# Modelo a ser usado pelo Ollama (ex: mistral, llama3)
+model = mistral
+# URL base do Ollama
+base_url = http://localhost:11434
+# Diretório raiz para operações de arquivo
+root_dir = ~/lori
+# Habilitar logs detalhados de ferramentas
+verbose = false
+
+[tools]
+# Lista de diretórios somente leitura permitidos fora da raiz (separados por vírgula)
+# Ex: /etc,/usr/share
+readonly_dirs =
+# Permitir leitura de qualquer arquivo no sistema (exceto denylist)
+global_read = false
+# Permitir escrita em qualquer lugar (perigoso)
+global_write = false
+# Lista de comandos de shell permitidos (separados por vírgula)
+# Ex: ls,cat,echo
+shell_allow = ls,cat,echo,git,ruff,black,pytest
+# Timeout em segundos para chamadas de rede e subprocessos
+timeout_secs = 60

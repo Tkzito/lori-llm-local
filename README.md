@@ -1,7 +1,7 @@
 Lori CLI – Assistente Local em Português
 =======================================
 
-Lori é uma assistente de linha de comando que utiliza seu Ollama local para executar tarefas em português. O projeto inclui um conjunto de ferramentas para leitura/escrita de arquivos, buscas na web, manipulação de Git e consulta a cotações de moedas e criptoativos, tudo sob seu controle e **sem depender de serviços pagos**.
+Lori é uma assistente que utiliza seu Ollama local para executar tarefas em português. O projeto inclui uma **interface de linha de comando (CLI)** e uma **interface web avançada** com um painel de "raciocínio" em tempo real, além de um conjunto de ferramentas para leitura/escrita de arquivos, buscas na web, manipulação de Git e consulta a cotações, tudo sob seu controle e **sem depender de serviços pagos**.
 
 ## Requisitos
 
@@ -39,6 +39,19 @@ export ASSISTANT_MODEL=mistral
 
 ## Como executar
 
+### Interface Web
+
+Para iniciar a interface web, que oferece uma experiência de "agente" completa:
+
+```bash
+source .venv/bin/activate
+uvicorn web.main:app --reload --port 8001
+```
+
+Acesse a interface em `http://127.0.0.1:8000`.
+
+### Linha de Comando (CLI)
+
 - Comando único:
   ```bash
   python -m assistant_cli.cli "Resuma README.md"
@@ -54,6 +67,10 @@ export ASSISTANT_MODEL=mistral
 - Habilitando logs detalhados das ferramentas:
   ```bash
   python -m assistant_cli.cli --verbose "Liste arquivos"
+  ```
+- Consultando o histórico recente (últimas entradas gravadas):
+  ```bash
+  python -m assistant_cli.cli --history --history-limit 5
   ```
 
 ## Principais ferramentas
@@ -130,6 +147,8 @@ python -m assistant_cli.tools_cli git.commit --args-json '{"message":"Teste","ad
 
 ## Observações importantes
 
+- Por padrão, a Lori usa `~/lori` como diretório de trabalho; defina `ASSISTANT_ROOT` se quiser outro local.
+- O arquivo padrão `~/lori/lori-notas.txt` é reutilizado para anotações; prefira atualizá-lo em vez de criar novos arquivos, salvo instrução contrária.
 - As operações de arquivo são limitadas pelo `ASSISTANT_ROOT` para evitar mudanças indesejadas.
 - A busca na web usa DuckDuckGo HTML (gratuito). Instalar o pacote `ddgs` melhora snippets e estabilidade.
 - `web.get_many` funciona mesmo sem Playwright, usando `requests + BeautifulSoup` como fallback.

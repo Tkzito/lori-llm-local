@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from datetime import datetime
 
 
 def env_str(name: str, default: str) -> str:
@@ -25,12 +26,28 @@ OLLAMA_BASE_URL = env_str("OLLAMA_BASE_URL", "http://localhost:11434")
 ASSISTANT_MODEL = env_str("ASSISTANT_MODEL", "mistral")
 
 # Root restriction for all fs ops
-ASSISTANT_ROOT = Path(env_str("ASSISTANT_ROOT", str(HOME))).resolve()
+DEFAULT_ROOT = HOME / "lori"
+_raw_root = env_str("ASSISTANT_ROOT", str(DEFAULT_ROOT))
+ASSISTANT_ROOT = Path(_raw_root).resolve()
+if not ASSISTANT_ROOT.exists():
+    ASSISTANT_ROOT.mkdir(parents=True, exist_ok=True)
+elif not ASSISTANT_ROOT.is_dir():
+    raise RuntimeError(f"ASSISTANT_ROOT precisa ser um diretório válido (recebido: {ASSISTANT_ROOT})")
+
+DEFAULT_NOTE_FILE = ASSISTANT_ROOT / "lori-notas.txt"
+if _raw_root == str(DEFAULT_ROOT) and not DEFAULT_NOTE_FILE.exists():
+    DEFAULT_NOTE_FILE.touch()
 
 # Storage
 STATE_DIR = Path(env_str("ASSISTANT_STATE_DIR", str(HOME / ".local" / "share" / "assistant_cli"))).resolve()
 STATE_DIR.mkdir(parents=True, exist_ok=True)
-HISTORY_PATH = STATE_DIR / "history.jsonl"
+
+def get_daily_history_path() -> Path:
+    """Retorna o caminho para o arquivo de histórico do dia atual."""
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    return STATE_DIR / f"history-{today}.jsonl"
+
+HISTORY_PATH = get_daily_history_path()
 
 # Safety
 SHELL_ALLOW = set(

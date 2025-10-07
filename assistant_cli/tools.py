@@ -19,9 +19,10 @@ from typing import Any, Callable, Dict, List, Optional
 
 import requests
 try:
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import sync_playwright  # type: ignore
     PLAYWRIGHT_AVAILABLE = True
 except ImportError:
+    sync_playwright = None  # type: ignore
     PLAYWRIGHT_AVAILABLE = False
 
 try:
@@ -199,7 +200,10 @@ def tool_fs_list(args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def tool_fs_search(args: Dict[str, Any]) -> Dict[str, Any]:
-    query = args.get("query")
+    query_raw = args.get("query")
+    if query_raw is None or not str(query_raw).strip():
+        return {"ok": False, "error": "parâmetro 'query' obrigatório"}
+    query = str(query_raw)
     directory = args.get("directory", ".")
     try:
         d = _resolve_readable_path(directory, allow_outside_root=bool(args.get("__allow_outside_root", False)))
@@ -213,7 +217,7 @@ def tool_fs_search(args: Dict[str, Any]) -> Dict[str, Any]:
     # Prefer ripgrep if available
     try:
         subprocess.run(["rg", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        cmd = ["rg", "-n", "--no-heading", "--color", "never", query, str(d)]
+        cmd = ["rg", "-n", "--no-heading", "--color", "never", str(query), str(d)]
         out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, timeout=TIMEOUT_SECS)
         text = out.decode("utf-8", errors="replace")
     except Exception:
@@ -552,7 +556,7 @@ def tool_web_search(args: Dict[str, Any]) -> Dict[str, Any]:
                 break
         return {"ok": True, "results": results}
     except Exception as e:
-        return {"ok": False, "error": f"Erro na busca com Playwright: {e}"}
+        return {"ok": False, "error": f"falha_na_busca ({type(e).__name__}): {e}"}
 
 
 def tool_crypto_price(args: Dict[str, Any]) -> Dict[str, Any]:
@@ -795,9 +799,11 @@ _CRYPTO_ID_MAP: Dict[str, str] = {
 
 def _resolve_asset(symbol: str, vs_override: list[str] | None = None) -> tuple[str | None, list[str]]:
     key = _norm(symbol).replace(" ", "")
-    asset_id = _CRYPTO_ID_MAP.get(key)
     vs = vs_override or ["usd", "brl"]
-    return (asset_id or key, vs)
+    if key.startswith("id:") and len(key) > 3:
+        return key[3:], vs
+    asset_id = _CRYPTO_ID_MAP.get(key)
+    return (asset_id, vs)
 
 # País -> fuso padrão (capital/maior cidade). Não exaustivo, mas cobre a maioria dos casos.
 _COUNTRY_DEFAULT_TZ: Dict[str, str] = {
