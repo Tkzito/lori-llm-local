@@ -1,0 +1,7 @@
+ollama
+ddgs
+beautifulsoup4
+fastapi
+uvicorn[standard]
+pytest
+ruff
