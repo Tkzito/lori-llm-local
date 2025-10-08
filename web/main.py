@@ -3,13 +3,19 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import AsyncGenerator, List
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from assistant_cli.config import HISTORY_PATH
+from assistant_cli.config import HISTORY_PATH, UPLOADS_DIR
+
+try:
+    import fitz  # PyMuPDF
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    PYMUPDF_AVAILABLE = False
 
 from assistant_cli.agent import Agent
 
@@ -18,6 +24,7 @@ class ChatRequest(BaseModel):
     message: str
     agent_mode: bool = False
     history: list[dict[str, str]] | None = None
+    context_files: list[str] | None = None
 
 
 app = FastAPI(
@@ -142,6 +149,32 @@ async def delete_all_history():
     return {"ok": True}
 
 
+@app.post("/upload")
+async def upload_files(files: List[UploadFile] = File(...)):
+    """Recebe e salva arquivos na pasta de uploads, extraindo texto de PDFs se possível."""
+    saved_files = []
+    for file in files:
+        try:
+            # Se for PDF e a biblioteca estiver disponível, extrai o texto
+            if file.filename.lower().endswith(".pdf") and PYMUPDF_AVAILABLE:
+                doc = fitz.open(stream=await file.read(), filetype="pdf")
+                text = "".join(page.get_text() for page in doc)
+                doc.close()
+                
+                new_filename = f"{Path(file.filename).stem}.pdf.txt"
+                file_path = UPLOADS_DIR / new_filename
+                file_path.write_text(text, encoding="utf-8")
+                saved_files.append({"filename": file.filename, "path": str(file_path)})
+            else: # Para outros arquivos (ex: .txt), salva diretamente
+                file_path = UPLOADS_DIR / file.filename
+                with open(file_path, "wb") as buffer:
+                    buffer.write(await file.read())
+                saved_files.append({"filename": file.filename, "path": str(file_path)})
+        except Exception as e:
+            return {"ok": False, "error": f"Falha ao processar {file.filename}: {e}"}
+    return {"ok": True, "files": saved_files}
+
+
 @app.websocket("/ws/chat")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
@@ -155,7 +188,11 @@ async def websocket_endpoint(websocket: WebSocket):
             if request.history:
                 for msg in request.history:
                     agent.add_user(msg["content"]) if msg["role"] == "user" else agent.add_assistant(msg["content"])
-
+            
+            # Adiciona o contexto dos arquivos ao agente
+            if request.context_files:
+                agent.add_context_files(request.context_files)
+            
             response_generator = agent.run_stream(request.message, agent_mode=request.agent_mode)
 
             # Itera sobre o gerador e lida com a confirmação do usuário

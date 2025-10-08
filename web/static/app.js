@@ -6,6 +6,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const clearHistoryBtn = document.getElementById("clear-history-btn");
   const newChatBtn = document.getElementById("new-chat-btn");
   const agentPanel = document.getElementById("agent-panel");
+  const uploadFileBtn = document.getElementById("upload-file-btn");
+  const fileInput = document.getElementById("file-input");
+  const contextFilesList = document.getElementById("context-files-list");
   const historyPanel = document.getElementById("history-panel");
   const toggleHistoryBtn = document.getElementById("toggle-history-btn");
   const agentLog = document.getElementById("agent-log");
@@ -118,9 +121,7 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       // Aplica o realce de sintaxe nos blocos de código
-      conversation.querySelectorAll('pre code').forEach((block) => {
-        hljs.highlightElement(block);
-      });
+      enhanceCodeBlocks(conversation);
       conversation.scrollTop = conversation.scrollHeight;
     } catch (error) {
       console.error("Falha ao buscar conversa:", error);
@@ -214,11 +215,18 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     currentHistory.pop(); // Remove a div vazia do assistente que acabamos de adicionar
 
+    // Coleta os caminhos dos arquivos de contexto
+    const contextFiles = [];
+    contextFilesList.querySelectorAll('.context-file-entry').forEach(entry => {
+      contextFiles.push(entry.dataset.path);
+    });
+
     // Envia a mensagem via WebSocket
     socket.send(JSON.stringify({
         message: message,
         history: currentHistory,
-        agent_mode: true // Modo agente agora é sempre ativo
+        agent_mode: true, // Modo agente agora é sempre ativo
+        context_files: contextFiles
     }));
   });
 
@@ -320,7 +328,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // Acumula o conteúdo no atributo de dados e renderiza
             assistantWrapper.dataset.fullContent += data.content;
             contentDiv.innerHTML = marked.parse(assistantWrapper.dataset.fullContent);
-            assistantWrapper.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+            enhanceCodeBlocks(assistantWrapper);
             conversation.scrollTop = conversation.scrollHeight;
             break;
         case 'error':
@@ -344,6 +352,79 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   newChatBtn.addEventListener('click', startNewChat);
+
+  // --- Lógica de Upload ---
+  uploadFileBtn.addEventListener('click', () => {
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', async (event) => {
+    const files = event.target.files;
+    if (files.length === 0) return;
+
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append("files", file);
+    }
+
+    try {
+      const response = await fetch('/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await response.json();
+      if (data.ok) {
+        data.files.forEach(addFileToContextList);
+      } else {
+        alert(`Erro no upload: ${data.error}`);
+      }
+    } catch (error) {
+      console.error("Falha no upload:", error);
+      alert("Erro de conexão durante o upload.");
+    }
+
+    // Limpa o input para permitir o upload do mesmo arquivo novamente
+    fileInput.value = '';
+  });
+
+  const addFileToContextList = (file) => {
+    const fileEntry = document.createElement('div');
+    fileEntry.className = 'context-file-entry';
+    fileEntry.dataset.path = file.path;
+    fileEntry.innerHTML = `
+      <span>${file.filename}</span>
+      <button class="remove-file-btn">✖</button>
+    `;
+    contextFilesList.appendChild(fileEntry);
+
+    fileEntry.querySelector('.remove-file-btn').addEventListener('click', () => {
+      fileEntry.remove();
+    });
+  };
+
+  const enhanceCodeBlocks = (container) => {
+    container.querySelectorAll('pre').forEach((pre) => {
+      // Evita adicionar o botão múltiplas vezes
+      if (pre.querySelector('.copy-code-btn')) return;
+
+      const code = pre.querySelector('code');
+      if (code) {
+        hljs.highlightElement(code);
+      }
+
+      const copyButton = document.createElement('button');
+      copyButton.className = 'copy-code-btn';
+      copyButton.textContent = 'Copiar';
+      pre.appendChild(copyButton);
+
+      copyButton.addEventListener('click', () => {
+        navigator.clipboard.writeText(code.textContent).then(() => {
+          copyButton.textContent = 'Copiado!';
+          setTimeout(() => { copyButton.textContent = 'Copiar'; }, 2000);
+        });
+      });
+    });
+  };
 
   // --- Lógica do Input ---
   messageInput.addEventListener('input', () => {

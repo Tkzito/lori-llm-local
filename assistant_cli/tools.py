@@ -38,12 +38,27 @@ except Exception:
     DDG_SEARCH_AVAILABLE = False
 
 
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    pd = None
+    PANDAS_AVAILABLE = False
+
+try:
+    from pandasql import sqldf
+    PANDASQL_AVAILABLE = True
+except ImportError:
+    sqldf = None
+    PANDASQL_AVAILABLE = False
+
 from .config import (
     ASSISTANT_ROOT,
     ASSISTANT_READONLY_DIRS,
     ASSISTANT_GLOBAL_READ,
     ASSISTANT_GLOBAL_WRITE,
     ASSISTANT_DENYLIST,
+    CACHE_DIR,
     MAX_READ_BYTES,
     MAX_WEB_CHARS,
     SHELL_ALLOW,
@@ -378,7 +393,7 @@ def tool_fs_tempfile(args: Dict[str, Any]) -> Dict[str, Any]:
     prefix = args.get("prefix", "temp_")
     suffix = args.get("suffix", ".txt")
     # Cria um arquivo temporário nomeado de forma segura no diretório raiz do assistente
-    fd, path = tempfile.mkstemp(prefix=prefix, suffix=suffix, dir=ASSISTANT_ROOT)
+    fd, path = tempfile.mkstemp(prefix=prefix, suffix=suffix, dir=CACHE_DIR)
     os.close(fd)  # Fecha o manipulador de arquivo, queremos apenas o nome
     return {"ok": True, "path": path}
 
@@ -1191,12 +1206,16 @@ def tool_sys_time_diff(args: Dict[str, Any]) -> Dict[str, Any]:
 
 def tool_shell_exec(args: Dict[str, Any]) -> Dict[str, Any]:
     cmd = args.get("cmd")
-    if not isinstance(cmd, list):
-        # Split via shell-safe lexer
-        try:
-            cmd = shlex.split(str(cmd))
-        except Exception:
-            return {"ok": False, "error": "invalid cmd"}
+    # A ferramenta agora espera uma lista, onde o primeiro item é o comando.
+    if isinstance(cmd, str):
+        # Tenta dividir a string, mas desencoraja comandos complexos.
+        cmd_list = shlex.split(cmd)
+        if len(cmd_list) > 1 and any(op in cmd_list for op in ["&&", ";", "|", ">", "<"]):
+             return {"ok": False, "error": "Comandos complexos com operadores de shell não são permitidos. Execute um comando por vez."}
+        cmd = cmd_list
+    elif not isinstance(cmd, list):
+        return {"ok": False, "error": "O parâmetro 'cmd' deve ser uma lista de strings (comando e argumentos)."}
+
     if not cmd:
         return {"ok": False, "error": "empty cmd"}
     # Allow any command when '*' present
@@ -1373,6 +1392,74 @@ def tool_geo_continents(args: Dict[str, Any]) -> Dict[str, Any]:
             out["sources"] = []
     return out
 
+
+def tool_spreadsheet_read_sheet(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Lê uma ou todas as abas de um arquivo de planilha (Excel, CSV)."""
+    if not PANDAS_AVAILABLE:
+        return {"ok": False, "error": "A biblioteca 'pandas' é necessária para ler planilhas."}
+
+    path = args.get("path")
+    try:
+        p = _resolve_readable_path(path, allow_outside_root=bool(args.get("__allow_outside_root", False)))
+    except Exception as e:
+        msg = str(e)
+        if "outside allowed read locations" in msg:
+            return _confirm_required_response("spreadsheet.read_sheet", str(Path(path)), {"path": path}, msg)
+        return {"ok": False, "error": msg}
+
+    if not p.exists() or not p.is_file():
+        return {"ok": False, "error": "Arquivo de planilha não encontrado."}
+
+    try:
+        # Detecta o tipo de arquivo e usa a função de leitura correta
+        if str(p).lower().endswith(".csv"):
+            df = pd.read_csv(p)
+            df_dict = {"Sheet1": df} # Trata o CSV como uma única aba
+        else:
+            # sheet_name=None lê todas as abas de um arquivo Excel
+            df_dict = pd.read_excel(p, sheet_name=None)
+
+        sheets_data = {}
+        for sheet_name, df in df_dict.items():
+            # Retorna as primeiras 50 linhas como CSV para o LLM analisar
+            csv_preview = df.head(50).to_csv(index=False)
+            sheets_data[sheet_name] = {"rows": len(df), "columns": list(df.columns), "head_csv": csv_preview}
+        return {"ok": True, "path": str(p), "sheets": sheets_data}
+    except Exception as e:
+        return {"ok": False, "error": f"Falha ao ler a planilha: {e}"}
+
+def tool_spreadsheet_query(args: Dict[str, Any]) -> Dict[str, Any]:
+    """Executa uma consulta em linguagem natural em um arquivo de planilha (Excel, CSV)."""
+    if not PANDAS_AVAILABLE or not PANDASQL_AVAILABLE:
+        return {"ok": False, "error": "As bibliotecas 'pandas' e 'pandasql' são necessárias para esta consulta."}
+
+    path = args.get("path")
+    query = args.get("query")
+    if not query:
+        return {"ok": False, "error": "O parâmetro 'query' é obrigatório."}
+
+    # O LLM deve fornecer uma query SQL. O nome da tabela é sempre 'df'.
+    if not re.search(r"\bselect\b", query, re.I) or not re.search(r"\bfrom\s+df\b", query, re.I):
+        return {"ok": False, "error": "Consulta SQL inválida. A consulta DEVE ser no formato 'SELECT ... FROM df ...', usando 'df' como o nome da tabela."}
+
+    try:
+        p = _resolve_readable_path(path, allow_outside_root=bool(args.get("__allow_outside_root", False)))
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+    if not p.exists() or not p.is_file():
+        return {"ok": False, "error": "Arquivo de planilha não encontrado."}
+    try:
+        if str(p).lower().endswith(".csv"):
+            df = pd.read_csv(p)
+        else:
+            df = pd.read_excel(p)
+        
+        # Executa a query SQL no DataFrame
+        result_df = sqldf(query, locals())
+        return {"ok": True, "query": query, "result": result_df.to_markdown(index=False)}
+    except Exception as e:
+        return {"ok": False, "error": f"Falha ao executar a consulta na planilha: {e}"}
 
 def registry() -> Dict[str, ToolSpec]:
     return {
@@ -1556,6 +1643,18 @@ def registry() -> Dict[str, ToolSpec]:
             description="Listar continentes e total (offline); opção de verificação online",
             params={"verify_online": "bool?"},
             func=tool_geo_continents,
+        ),
+        "spreadsheet.read_sheet": ToolSpec(
+            name="spreadsheet.read_sheet",
+            description="Lê o conteúdo de uma ou mais abas de um arquivo de planilha (Excel).",
+            params={"path": "str"},
+            func=tool_spreadsheet_read_sheet,
+        ),
+        "spreadsheet.query": ToolSpec(
+            name="spreadsheet.query",
+            description="Executa uma consulta SQL em um arquivo de planilha (Excel, CSV). A ferramenta lê o arquivo do 'path' fornecido; não use 'fs.read' antes. A tabela para a consulta se chama sempre 'df'.",
+            params={"path": "str", "query": "str"},
+            func=tool_spreadsheet_query,
         ),
     }
 

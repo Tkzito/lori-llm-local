@@ -178,6 +178,48 @@ body {
     position: relative;
 }
 
+.context-area {
+    padding: 0 20px;
+    max-width: 800px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.context-files-container {
+    display: flex;
+    gap: 10px;
+    padding-bottom: 8px;
+}
+
+#context-files-list {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.context-file-entry {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: var(--history-entry-bg);
+    padding: 4px 10px;
+    border-radius: 16px;
+    font-size: 0.9em;
+}
+
+.remove-file-btn {
+    background: none;
+    border: none;
+    color: #999;
+    cursor: pointer;
+    font-size: 1.2em;
+    line-height: 1;
+}
+.remove-file-btn:hover {
+    color: #f55;
+}
+
 .chat-container {
     flex-grow: 1;
     overflow-y: auto;
@@ -391,6 +433,26 @@ input:checked + .slider:before { transform: translateX(18px); }
     padding: 15px;
     border-radius: 8px;
     overflow-x: auto;
+    position: relative; /* Necessário para posicionar o botão de cópia */
+}
+
+.copy-code-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background-color: #333;
+    color: #ccc;
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 0.8em;
+    cursor: pointer;
+    opacity: 0; /* Oculto por padrão */
+    transition: opacity 0.2s ease;
+}
+
+.message pre:hover .copy-code-btn {
+    opacity: 1; /* Visível no hover */
 }
 
 .input-container {
@@ -456,6 +518,15 @@ input:checked + .slider:before { transform: translateX(18px); }
     cursor: not-allowed;
 }
 
+#upload-file-btn {
+    background: none;
+    border: none;
+    color: #aaa;
+    font-size: 1.5em;
+    cursor: pointer;
+    padding: 8px;
+    align-self: flex-end;
+}
 .icon {
     width: 20px;
     height: 20px;

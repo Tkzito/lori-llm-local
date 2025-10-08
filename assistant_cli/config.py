@@ -26,16 +26,24 @@ OLLAMA_BASE_URL = env_str("OLLAMA_BASE_URL", "http://localhost:11434")
 ASSISTANT_MODEL = env_str("ASSISTANT_MODEL", "mistral")
 
 # Root restriction for all fs ops
-DEFAULT_ROOT = HOME / "lori"
-_raw_root = env_str("ASSISTANT_ROOT", str(DEFAULT_ROOT))
-ASSISTANT_ROOT = Path(_raw_root).resolve()
-if not ASSISTANT_ROOT.exists():
-    ASSISTANT_ROOT.mkdir(parents=True, exist_ok=True)
-elif not ASSISTANT_ROOT.is_dir():
-    raise RuntimeError(f"ASSISTANT_ROOT precisa ser um diretório válido (recebido: {ASSISTANT_ROOT})")
+LORI_HOME = Path(env_str("LORI_HOME", str(HOME / "lori"))).resolve()
+LORI_HOME.mkdir(parents=True, exist_ok=True)
 
-DEFAULT_NOTE_FILE = ASSISTANT_ROOT / "lori-notas.txt"
-if _raw_root == str(DEFAULT_ROOT) and not DEFAULT_NOTE_FILE.exists():
+WORKSPACE_DIR = LORI_HOME / "workspace"
+CACHE_DIR = LORI_HOME / "cache"
+UPLOADS_DIR = LORI_HOME / "uploads"
+
+WORKSPACE_DIR.mkdir(exist_ok=True)
+CACHE_DIR.mkdir(exist_ok=True)
+UPLOADS_DIR.mkdir(exist_ok=True)
+
+_raw_root = env_str("ASSISTANT_ROOT", str(WORKSPACE_DIR))
+ASSISTANT_ROOT = Path(_raw_root).resolve()
+if not ASSISTANT_ROOT.is_dir():
+    raise RuntimeError(f"ASSISTANT_ROOT ({ASSISTANT_ROOT}) precisa ser um diretório válido.")
+
+DEFAULT_NOTE_FILE = WORKSPACE_DIR / "lori-notas.txt"
+if not DEFAULT_NOTE_FILE.exists():
     DEFAULT_NOTE_FILE.touch()
 
 # Storage

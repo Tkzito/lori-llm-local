@@ -265,7 +265,6 @@ class HeuristicProcessor:
             {"keywords": [("ferramentas",), ("listar", "liste", "quais")], "handler": lambda p, m: {}, "tool": "help.tools"},
             {"keywords": ["continentes", ("quais", "nomes", "lista", "listar", "quantos")], "handler": lambda p, m: {"verify_online": "verificar" in p}, "tool": "geo.continents"},
             {"pattern": re.compile(r"(?:fs\.list|listar\s+arquivos|lista\s+arquivos|list\s+arquivos)\s+(?:em|de|do|da)\s+(?P<path>/[^\s]+)"), "handler": handle_fs_path, "tool": "fs.list"},
-            {"pattern": re.compile(r"(?:ler|leia|abrir)\s+(?P<path>/[^\s]+)"), "handler": handle_fs_path, "tool": "fs.read"},
         ]
 
     def run_shortcuts(self, prompt: str) -> str | None:

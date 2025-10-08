@@ -37,9 +37,17 @@
                 </div>
             </div>
 
+            <div class="context-area">
+                <div class="context-files-container">
+                    <div id="context-files-list"></div> 
+                </div>
+            </div>
+
             <div class="input-container">
                 <div class="input-wrapper">
                     <form id="chat-form">
+                        <button type="button" id="upload-file-btn" title="Adicionar Arquivo">📎</button>
+                        <input type="file" id="file-input" style="display: none;" multiple />
                         <textarea id="message-input" placeholder="Digite sua mensagem..." rows="1"></textarea>
                         <button type="submit" id="send-button" title="Enviar" disabled>
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="icon">
