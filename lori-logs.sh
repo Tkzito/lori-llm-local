@@ -29,6 +29,9 @@ follow_log() {
   echo "[log] Monitorando $label em tempo real."
   echo "[log] Caminho: $file"
   echo "----------------------------------------"
+  if [[ ! -s "$file" ]]; then
+    echo "[log] (sem entradas ainda; aguardando novas linhas...)"
+  fi
   tail -n +1 -F "$file"
 }
 
@@ -49,11 +52,14 @@ case "$1" in
     [[ -f "$WEB_LOG" ]] || touch "$WEB_LOG"
   echo "[log] Monitorando logs de Ollama e Web UI."
   echo "[log] Arquivos:"
-  echo "  - $OLLAMA_LOG"
-  echo "  - $WEB_LOG"
-  echo "----------------------------------------"
-  tail -n +1 -F "$OLLAMA_LOG" "$WEB_LOG"
-  ;;
+    echo "  - $OLLAMA_LOG"
+    echo "  - $WEB_LOG"
+    echo "----------------------------------------"
+    if [[ ! -s "$OLLAMA_LOG" && ! -s "$WEB_LOG" ]]; then
+      echo "[log] (sem entradas ainda; aguardando novas linhas...)"
+    fi
+    tail -n +1 -F "$OLLAMA_LOG" "$WEB_LOG"
+    ;;
   *)
     echo "[erro] Argumento desconhecido: $1" >&2
     usage
