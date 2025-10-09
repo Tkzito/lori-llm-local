@@ -23,6 +23,41 @@ class HeuristicProcessor:
         self.agent = agent
         self._setup_heuristic_rules()
 
+    def _normalize_text(self, text: str) -> str:
+        """Retorna texto normalizado sem acentos, em minúsculas e sem pontuação básica."""
+        normalized = unicodedata.normalize("NFKD", text.lower())
+        normalized = "".join(ch for ch in normalized if ord(ch) < 128)
+        normalized = normalized.replace("!", "").replace("?", "")
+        return " ".join(normalized.split())
+
+    def _handle_greeting(self, prompt: str) -> str | None:
+        """Responde saudações simples sem acionar o LLM."""
+        normalized = self._normalize_text(prompt)
+        if not normalized:
+            return None
+
+        if not normalized:
+            return None
+
+        tokens = normalized.split()
+        if not tokens:
+            return None
+
+        greeting_starts = {"oi", "ola", "olá", "hey", "hi", "hello", "salve"}
+        greeting_pairs = {"bom dia", "boa tarde", "boa noite", "e ai", "eae", "iae"}
+
+        starts_with_greeting = tokens[0] in greeting_starts
+        if len(tokens) >= 2:
+            first_two = " ".join(tokens[:2])
+            if first_two in greeting_pairs:
+                starts_with_greeting = True
+
+        if starts_with_greeting:
+            # Limita a saudações curtas (até 5 palavras)
+            if len(tokens) <= 5:
+                return "Olá! Sou a Lori. Como posso ajudar?"
+        return None
+
     def _extract_regions_from_prompt(self, p: str) -> list[str]:
         regions: list[str] = []
         region_map = {
@@ -269,6 +304,10 @@ class HeuristicProcessor:
 
     def run_shortcuts(self, prompt: str) -> str | None:
         """Executa chamadas de ferramentas heurísticas e retorna uma resposta final se um atalho for encontrado."""
+        greeting_response = self._handle_greeting(prompt or "")
+        if greeting_response:
+            return greeting_response
+
         forced_calls = self.find_tool_calls(prompt)
         for c in forced_calls:
             try:

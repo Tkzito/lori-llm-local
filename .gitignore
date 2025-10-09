@@ -1,13 +1,15 @@
-# Virtual environments
-.venv/
-
-# Python cache
+# Python
 __pycache__/
-*.py[cod]
-
-# Test artifacts
-.pytest_cache/
-
-# Editor/OS files
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.env
+.venv/
+dist/
+build/
 .DS_Store
-*.swp
+
+# IDEs
+.vscode/
+.idea/

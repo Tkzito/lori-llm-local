@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import unicodedata
+from uuid import uuid4
 from pathlib import Path
-from typing import AsyncGenerator, List
+from typing import List
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, UploadFile, File
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from assistant_cli.config import HISTORY_PATH, UPLOADS_DIR
@@ -25,6 +28,10 @@ class ChatRequest(BaseModel):
     agent_mode: bool = False
     history: list[dict[str, str]] | None = None
     context_files: list[str] | None = None
+
+
+class RemoveFilesRequest(BaseModel):
+    paths: list[str]
 
 
 app = FastAPI(
@@ -155,24 +162,81 @@ async def upload_files(files: List[UploadFile] = File(...)):
     saved_files = []
     for file in files:
         try:
+            original_name = file.filename or "arquivo"
+            normalized = unicodedata.normalize("NFKD", original_name)
+            normalized = normalized.encode("ascii", "ignore").decode("ascii") or "arquivo"
+            safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", normalized).strip("-") or "arquivo"
+            unique_suffix = uuid4().hex[:10]
+
             # Se for PDF e a biblioteca estiver disponível, extrai o texto
             if file.filename.lower().endswith(".pdf") and PYMUPDF_AVAILABLE:
                 doc = fitz.open(stream=await file.read(), filetype="pdf")
                 text = "".join(page.get_text() for page in doc)
                 doc.close()
                 
-                new_filename = f"{Path(file.filename).stem}.pdf.txt"
+                new_filename = f"{Path(safe_name).stem}-{unique_suffix}.txt"
                 file_path = UPLOADS_DIR / new_filename
                 file_path.write_text(text, encoding="utf-8")
-                saved_files.append({"filename": file.filename, "path": str(file_path)})
+                size_bytes = file_path.stat().st_size
+                saved_files.append({
+                    "display_name": original_name,
+                    "path": str(file_path),
+                    "size": size_bytes,
+                    "stored_name": file_path.name,
+                })
             else: # Para outros arquivos (ex: .txt), salva diretamente
-                file_path = UPLOADS_DIR / file.filename
+                extension = "".join(Path(safe_name).suffixes) or ""
+                stem = Path(safe_name).stem or "arquivo"
+                new_filename = f"{stem}-{unique_suffix}{extension}"
+                file_path = UPLOADS_DIR / new_filename
                 with open(file_path, "wb") as buffer:
                     buffer.write(await file.read())
-                saved_files.append({"filename": file.filename, "path": str(file_path)})
+                size_bytes = file_path.stat().st_size
+                saved_files.append({
+                    "display_name": original_name,
+                    "path": str(file_path),
+                    "size": size_bytes,
+                    "stored_name": file_path.name,
+                })
         except Exception as e:
             return {"ok": False, "error": f"Falha ao processar {file.filename}: {e}"}
     return {"ok": True, "files": saved_files}
+
+
+@app.post("/upload/remove")
+async def remove_uploaded_files(request: RemoveFilesRequest):
+    """Remove arquivos previamente enviados para o diretório de uploads."""
+    deleted: list[str] = []
+    failures: list[dict[str, str]] = []
+    uploads_root = UPLOADS_DIR.resolve()
+
+    for raw_path in request.paths:
+        try:
+            if not raw_path:
+                continue
+            raw_path_str = str(raw_path)
+            if os.path.isabs(raw_path_str):
+                target_path = Path(raw_path_str).resolve()
+            else:
+                target_path = (UPLOADS_DIR / raw_path_str).resolve()
+            if uploads_root not in target_path.parents and target_path != uploads_root:
+                failures.append({"path": raw_path_str, "error": "path_outside_uploads"})
+                continue
+            if target_path.exists():
+                if target_path.is_dir():
+                    failures.append({"path": raw_path_str, "error": "directories_not_supported"})
+                    continue
+                target_path.unlink()
+                deleted.append(str(target_path))
+            else:
+                failures.append({"path": raw_path_str, "error": "not_found"})
+        except Exception as exc:
+            failures.append({"path": raw_path_str, "error": str(exc)})
+
+    status_ok = not failures
+    payload = {"ok": status_ok, "deleted": deleted, "errors": failures}
+    status_code = 200 if status_ok else 207
+    return JSONResponse(status_code=status_code, content=payload)
 
 
 @app.websocket("/ws/chat")

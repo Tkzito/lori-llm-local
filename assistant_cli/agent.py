@@ -149,7 +149,13 @@ class Agent:
             if is_stream_call:
                 yield {"type": "content", "content": shortcut_answer}
                 self._save_history()
-                return 
+                return
+            # Evita duplicar mensagens se a heurística já registrou a resposta.
+            last_msg = self.messages[-1] if self.messages else None
+            if not (last_msg and last_msg.get("role") == "assistant" and last_msg.get("content") == shortcut_answer):
+                self.add_assistant(shortcut_answer)
+            self._save_history()
+            return shortcut_answer
 
         def expects_tool_use(text: str) -> bool:
             pl = (text or "").lower()
@@ -365,10 +371,34 @@ class Agent:
     def run(self, prompt: str) -> str:
         """Executes the agent logic for a given prompt, returning a single string response."""
         result = self._run_logic(prompt, is_stream_call=False)
-        if not isinstance(result, str):
-            # Fallback for safety, should not be hit in this mode.
-            return "".join(m.get("content", "") for m in result)
-        return result
+        if isinstance(result, str):
+            return result
+
+        # `result` é um generator; precisamos consumir manualmente para capturar
+        # tanto os chunks quanto o valor final (StopIteration.value).
+        collected: list[str] = []
+        while True:
+            try:
+                item = next(result)
+            except StopIteration as stop:
+                final_value = stop.value
+                if isinstance(final_value, str) and final_value:
+                    collected.append(final_value)
+                break
+            except Exception:
+                break
+
+            if isinstance(item, dict):
+                content = item.get("content")
+                if not content and "data" in item:
+                    data = item["data"]
+                    if isinstance(data, dict):
+                        content = data.get("content")
+                if content:
+                    collected.append(str(content))
+            elif isinstance(item, str):
+                collected.append(item)
+        return "".join(collected)
 
     def run_stream(self, prompt: str, agent_mode: bool = False) -> Iterator[Dict[str, Any]]:
         """

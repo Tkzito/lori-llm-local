@@ -27,18 +27,34 @@
             <div class="top-bar">
                 <button class="sidebar-toggle" id="toggle-history-btn" title="Histórico"><span>☰</span></button>
                 <h1>Lori Assistant</h1>
+                <div class="top-actions">
+                    <button class="sidebar-toggle" id="toggle-agent-btn" title="Raciocínio do agente"><span>🧠</span></button>
+                    <button class="sidebar-toggle" id="toggle-theme-btn" title="Alternar tema"><span>◑</span></button>
+                </div>
             </div>
             <div class="chat-container">
                 <div id="conversation">
-                    <div class="message assistant-message">
-                        <strong>Lori</strong>
-                        <div>Olá! Como posso ajudar hoje?</div>
+                    <div class="message-wrapper assistant-wrapper">
+                        <div class="message assistant-message">
+                            <strong>Lori</strong>
+                            <div>Olá! Como posso ajudar hoje?</div>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <div class="context-area">
+                <div class="context-header">
+                    <div>
+                        <h3>Arquivos de contexto</h3>
+                        <p>Arquivos aqui serão lidos antes da próxima mensagem.</p>
+                        <span id="context-count" class="context-count">Nenhum arquivo adicionado.</span>
+                    </div>
+                    <button id="clear-context-btn" title="Remover todos os arquivos" disabled>Limpar</button>
+                </div>
+                <div id="context-feedback" role="status" aria-live="polite"></div>
                 <div class="context-files-container">
+                    <div id="context-empty-state">Nenhum arquivo adicionado ainda.</div>
                     <div id="context-files-list"></div> 
                 </div>
             </div>
@@ -63,6 +79,7 @@
             <div class="agent-header">Raciocínio do Agente</div>
             <div class="agent-log" id="agent-log"></div>
         </div>
+        <button class="agent-handle" id="agent-handle-btn" title="Mostrar raciocínio" aria-hidden="true">🧠</button>
     </div>
 
     <script src="/static/app.js"></script>

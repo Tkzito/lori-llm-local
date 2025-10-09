@@ -1,187 +1,151 @@
-Lori CLI – Assistente Local em Português
-=======================================
+# Lori LLM Local
 
-Lori é uma assistente que utiliza seu Ollama local para executar tarefas em português. O projeto inclui uma **interface de linha de comando (CLI)** e uma **interface web avançada** com um painel de "raciocínio" em tempo real, além de um conjunto de ferramentas para leitura/escrita de arquivos, buscas na web, manipulação de Git e consulta a cotações, tudo sob seu controle e **sem depender de serviços pagos**.
+Lori é uma assistente local para linha de comando e navegador construída sobre modelos servidos pelo Ollama. O projeto oferece:
 
-## Requisitos
+- **Backend FastAPI** com WebSocket para streaming de respostas do agente.
+- **Interface web reativa** com histórico, painel de raciocínio, upload de arquivos de contexto e modo claro/escuro.
+- **Ferramentas modulares** acessíveis via `assistant_cli.tools.*`, reaproveitadas tanto pelo web app quanto pelo CLI.
 
-- Python 3.10+ instalado
-- Ollama rodando localmente (https://ollama.com)
-- (Opcional) Chave SSH configurada para pushes ao GitHub
+---
 
-### Preparando o Ollama e o modelo local
+## 🚀 Primeiros passos
 
-1. Instale o Ollama conforme o sistema operacional:
-   - **Linux**: `curl -fsSL https://ollama.com/install.sh | sh`
-   - **macOS/Windows**: baixe o instalador gráfico em <https://ollama.com/download>.
-2. Garanta que o serviço `ollama serve` esteja em execução (no Linux ele inicia automaticamente após a instalação).
-3. Faça o download do modelo que a Lori utilizará (ex.: `mistral`):
-   ```bash
-   ollama pull mistral
-   ```
-4. Teste o modelo localmente para confirmar que está respondendo:
-   ```bash
-   ollama run mistral "Qual a capital do Brasil?"
-   ```
-5. Caso deseje outro modelo (por exemplo `llama3`), repita o `ollama pull` com o nome desejado e ajuste a variável `ASSISTANT_MODEL` nas próximas etapas.
+### Pré-requisitos
 
-## Instalação
+- Python 3.10 ou superior.
+- Ollama instalado e executando (padrão em `http://localhost:11434`).
+- Recomendado: modelos como `mistral` importados no Ollama (`ollama run mistral`).
+
+### Menu unificado
+
+Utilize o menu principal para escolher como interagir com a Lori:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Variáveis de ambiente (opcionais)
-export OLLAMA_BASE_URL=http://localhost:11434
-export ASSISTANT_MODEL=mistral
+./start.sh
 ```
 
-## Como executar
+O script cuida de:
 
-### Interface Web
+1. Iniciar Lori no terminal (CLI)
+2. Iniciar Lori no navegador (Web UI)
+3. Verificar/iniciar o serviço Ollama
+4. Encerrar o Ollama
+5. Iniciar tudo (Ollama + Web UI em segundo plano)
+6. Encerrar tudo (Web UI + Ollama)
 
-Para iniciar a interface web, que oferece uma experiência de "agente" completa:
+O menu mostra o status atual de cada componente e mantém a Web UI sempre em `http://127.0.0.1:8001/`. Quando iniciada em segundo plano, os logs ficam em `.lori_web.log` e o PID em `.lori_web.pid`.
+
+A cada ação, o script garante que o virtualenv `.venv` exista, instala dependências de `requirements.txt` quando necessário e verifica se o Ollama responde (perguntando se deve inicializá-lo caso esteja parado).
+
+### Ver logs em tempo real
+
+Utilize o script auxiliar `lori-logs.sh` para acompanhar os logs capturados pelo menu:
 
 ```bash
-source .venv/bin/activate
-uvicorn web.main:app --reload --port 8001
+# Log do Ollama
+./lori-logs.sh ollama
+
+# Log da Web UI em background
+./lori-logs.sh web
+
+# Ambos os logs em uma única saída
+./lori-logs.sh ambos
 ```
 
-Acesse a interface em `http://127.0.0.1:8000`.
+Os arquivos correspondentes são `.lori_ollama.log` e `.lori_web.log`; os PIDs ficam registrados em `.lori_ollama.pid` e `.lori_web.pid`.
 
-### Linha de Comando (CLI)
+### Execução direta (opcional)
 
-- Comando único:
-  ```bash
-  python -m assistant_cli.cli "Resuma README.md"
-  ```
-- Modo interativo:
-  ```bash
-  python -m assistant_cli.cli
-  ```
-- Limitando o acesso a um diretório específico:
-  ```bash
-  ASSISTANT_ROOT=$PWD python -m assistant_cli.cli
-  ```
-- Habilitando logs detalhados das ferramentas:
-  ```bash
-  python -m assistant_cli.cli --verbose "Liste arquivos"
-  ```
-- Consultando o histórico recente (últimas entradas gravadas):
-  ```bash
-  python -m assistant_cli.cli --history --history-limit 5
-  ```
-
-## Principais ferramentas
-
-| Ferramenta             | Descrição resumida                                                |
-|------------------------|-------------------------------------------------------------------|
-| `fs.*`                 | Ler, escrever, listar e buscar arquivos dentro do `ASSISTANT_ROOT`|
-| `web.search`           | Busca na web via DuckDuckGo (HTML)                                |
-| `web.get` / `web.get_many` | Captura o conteúdo de URLs (com fallback sem Playwright)      |
-| `crypto.price`         | Cotação em tempo real de criptoativos via CoinGecko              |
-| `fx.rate`              | Conversão de moedas em tempo real via exchangerate.host          |
-| `git.*`                | Status, diff, commit, push, branch etc.                          |
-| `sys.time*` / `geo.*`  | Utilidades de data/hora e informações geográficas                 |
-
-Você pode listar todas as ferramentas disponíveis (com descrição e parâmetros) a qualquer momento:
+Se preferir chamar os modos manualmente, os scripts originais continuam disponíveis:
 
 ```bash
-python -m assistant_cli.tools_cli --list
+./run.sh       # CLI
+./run_web.sh   # interface web
 ```
 
-### Exemplo de chamada direta
+---
 
-```bash
-# Ler um arquivo
-python -m assistant_cli.tools_cli fs.read --args-json '{"path":"README.md"}'
+## 🖥️ Visão geral da interface web
 
-# Cotação em tempo real do Bitcoin
-python -m assistant_cli.tools_cli crypto.price --args-json '{"asset":"bitcoin","vs_currencies":["brl","usd"]}'
+A interface é dividida em três áreas principais:
 
-# Converter 5 dólares para reais
-python -m assistant_cli.tools_cli fx.rate --args-json '{"base":"USD","target":"BRL","amount":5}'
-```
+| Zona | Descrição |
+| --- | --- |
+| **Histórico** (coluna esquerda) | Lista conversas recentes. Pode ser ocultada/mostrada pelo botão ☰ na barra superior. |
+| **Chat** (centro) | Mostra a conversa com a Lori. Inclui área de anexos, campo de mensagem com envio `Enter`, indicador de digitação e o contador de arquivos de contexto. |
+| **Raciocínio do agente** (coluna direita) | Exibe pensamentos, chamadas de ferramenta e confirmações. Pode ser recolhido pelo botão 🧠 ou pelo handle flutuante que aparece quando fechado. |
 
-## Fluxo rápido de teste
+### Arquivos de contexto
 
-```bash
-mkdir -p ~/workspace/assistant-tests
-cd ~/workspace/assistant-tests
-export ASSISTANT_ROOT=$PWD
+- Adicione arquivos pelo botão 📎. Os arquivos são armazenados em `~/lori/uploads` (padrão).
+- Cada arquivo aparece com nome, tamanho, ícone e botão **Remover**. Enquanto o backend processa o pedido o item exibe um spinner.
+- O botão **Limpar** remove todos os arquivos carregados. O contador abaixo do título indica quantos arquivos estão ativos.
 
-# Criar e ler um arquivo
-python -m assistant_cli.tools_cli fs.write --args-json '{"path":"notas.txt","content":"Primeira linha"}'
-python -m assistant_cli.tools_cli fs.read  --args-json '{"path":"notas.txt"}'
+### Outros recursos úteis
 
-# Buscar texto
-printf 'alpha\nbeta\nbeta gamma\n' > sample.txt
-python -m assistant_cli.tools_cli fs.search --args-json '{"query":"beta"}'
+- Alternância de tema claro/escuro pela opção ◑ na barra superior.
+- Histórico e painel do agente lembram o estado (aberto/fechado) entre sessões via `localStorage`.
 
-# Editar conteúdo
-echo 'versao=1.0' > config.ini
-python -m assistant_cli.tools_cli edit.replace --args-json '{"path":"config.ini","find":"1.0","replace":"2.0"}'
+---
 
-# Ações de Git (dentro de um repositório)
-git init
-git config user.email you@example.com
-git config user.name "Seu Nome"
-python -m assistant_cli.tools_cli git.status
-python -m assistant_cli.tools_cli git.commit --args-json '{"message":"Teste","add_all":true}'
-```
-
-## Rotina com Git
-
-1. Configure sua identidade apenas uma vez:
-   ```bash
-   git config --global user.name "Seu Nome"
-   git config --global user.email "seu.email@exemplo.com"
-   ```
-2. Ao iniciar uma sessão, ative o `ssh-agent` e adicione sua chave:
-   ```bash
-   eval "$(ssh-agent -s)"
-   ssh-add ~/.ssh/id_ed25519
-   ```
-3. A Lori pode rodar `git status`, `git diff`, `git commit` e `git push` conforme você direcionar.
-
-## Observações importantes
-
-- Por padrão, a Lori usa `~/lori` como diretório de trabalho; defina `ASSISTANT_ROOT` se quiser outro local.
-- O arquivo padrão `~/lori/lori-notas.txt` é reutilizado para anotações; prefira atualizá-lo em vez de criar novos arquivos, salvo instrução contrária.
-- As operações de arquivo são limitadas pelo `ASSISTANT_ROOT` para evitar mudanças indesejadas.
-- A busca na web usa DuckDuckGo HTML (gratuito). Instalar o pacote `ddgs` melhora snippets e estabilidade.
-- `web.get_many` funciona mesmo sem Playwright, usando `requests + BeautifulSoup` como fallback.
-- Para dados financeiros, a Lori cruza CoinGecko/Exchangerate com fontes web. Se houver divergências, ela refaz as consultas automaticamente.
-
-## Estrutura do repositório
+## 📁 Estrutura do projeto
 
 ```
-assistant_cli/
- ├── agent.py          # Loop principal da Lori (heurísticas e controle)
- ├── cli.py            # Entrypoint da interface em linha de comando
- ├── tools.py          # Implementação das ferramentas
- ├── tools_cli.py      # CLI para chamar ferramentas diretamente
- ├── test_agent.py     # Testes de comportamento do agente
- └── test_tools.py     # Testes das ferramentas isoladas
-scripts/               # Scripts auxiliares (bootstrap, smoke tests, etc.)
-run.sh                 # Inicialização rápida (cria venv e instala deps)
-.gitignore             # Regras para o Git
-README.md              # Este arquivo
-requirements.txt       # Dependências Python
+assistant-cli/
+├── assistant_cli/          # Núcleo do agente e ferramentas
+│   ├── cli.py              # Entrada do CLI
+│   ├── agent.py            # Loop principal do agente
+│   ├── tools.py            # Registro de ferramentas/bindings
+│   └── config.py           # Variáveis de ambiente e diretórios padrão
+├── web/                    # Backend FastAPI (serviços REST/WebSocket)
+│   ├── main.py             # Aplicação FastAPI e rotas
+│   └── static/             # Front-end (index.html, style.css, app.js)
+├── run.sh                  # Inicializador do CLI
+├── run_web.sh              # Inicializador da interface web
+├── requirements.txt        # Dependências Python
+└── config.ini.template     # Template opcional de configuração
 ```
 
-## Contribuições e manutenção
+---
 
-- Issues e PRs: <https://github.com/Tkzito/llm-local>
-- Antes de abrir PR, rode:
-  ```bash
-  source .venv/bin/activate
-  python -m pytest assistant_cli/test_agent.py
-  python -m pytest assistant_cli/test_tools.py -k fx_rate
-  ```
-- Se não conseguir rodar a suíte completa, explique no PR quais comandos foram usados.
+## ⚙️ Configuração
 
-## Licença
+As principais variáveis de ambiente aceitas estão em `assistant_cli/config.py`. Algumas relevantes:
 
-Projeto disponibilizado sob licença MIT. Sinta-se à vontade para adaptar, contribuir e redistribuir.
+| Variável | Descrição | Padrão |
+| --- | --- | --- |
+| `ASSISTANT_MODEL` | Modelo a ser usado no Ollama | `mistral` |
+| `OLLAMA_BASE_URL` | Endpoint do Ollama | `http://localhost:11434` |
+| `LORI_HOME` | Diretório base para workspace/cache/uploads | `~/lori` |
+| `ASSISTANT_ROOT` | Raiz permitida para operações de arquivo | `~/lori/workspace` |
+| `ASSISTANT_VERBOSE` | Habilita logs de ferramentas no agente | `0` |
+| `OLLAMA_USE_GPU` | Define se o Ollama deve usar GPU (`1`) | auto |
+
+Para customizar permanentemente, você pode criar um `.env` (carregado manualmente) ou exportar as variáveis antes de rodar os scripts.
+
+> **Dica GPU**: assegure-se de instalar a versão do Ollama com suporte CUDA, exporte `OLLAMA_USE_GPU=1` (ou configure `~/.ollama/config`) e baixe o modelo desejado (`ollama pull mistral`) antes de iniciar o menu.
+
+---
+
+## 🧪 Desenvolvimento e testes
+
+- **Testes:** `pytest`
+- **Lint:** `ruff check .`
+- Os arquivos do front ficam em `web/static/`. Após alterar CSS ou JS basta recarregar a página; o backend roda com `--reload`.
+- Anexos enviados pela interface são salvos em `~/lori/uploads`. Limpe manualmente se necessário.
+
+---
+
+## 🛠️ Solução de problemas
+
+| Sintoma | Como resolver |
+| --- | --- |
+| Modelo não responde | Verifique se o Ollama está em execução e se o modelo foi baixado (`ollama list`). |
+| Não consigo remover arquivo de contexto | Confirme se o item aparece com spinner; se a operação falhar o aviso embaixo do cabeçalho trará o motivo. |
+| Portas ocupadas | Ajuste `run_web.sh` passando `--port` para outro valor (`./run_web.sh --port 9000`). |
+
+---
+
+## 📄 Licença
+
+Este projeto é distribuído nos termos definidos pelo autor. Consulte o repositório original para mais detalhes sobre uso e contribuições.

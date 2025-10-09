@@ -9,11 +9,252 @@ document.addEventListener("DOMContentLoaded", () => {
   const uploadFileBtn = document.getElementById("upload-file-btn");
   const fileInput = document.getElementById("file-input");
   const contextFilesList = document.getElementById("context-files-list");
+  const contextEmptyState = document.getElementById("context-empty-state");
+  const clearContextBtn = document.getElementById("clear-context-btn");
   const historyPanel = document.getElementById("history-panel");
   const toggleHistoryBtn = document.getElementById("toggle-history-btn");
+  const toggleAgentBtn = document.getElementById("toggle-agent-btn");
+  const toggleThemeBtn = document.getElementById("toggle-theme-btn");
   const agentLog = document.getElementById("agent-log");
   const sendButton = document.getElementById("send-button");
+  const mainContainer = document.querySelector(".main-container");
+  const agentHandleBtn = document.getElementById("agent-handle-btn");
+  const contextFeedback = document.getElementById("context-feedback");
+  const contextCountLabel = document.getElementById("context-count");
   let socket;
+  const contextFilesState = new Map(); // key => { displayName, size, path, storedName, removing }
+  let contextFeedbackTimeout;
+
+  const refreshContextEmptyState = () => {
+    const hasFiles = contextFilesState.size > 0;
+    if (contextEmptyState) {
+      contextEmptyState.style.display = hasFiles ? "none" : "block";
+    }
+    if (clearContextBtn && clearContextBtn.dataset.loading !== "true") {
+      clearContextBtn.disabled = !hasFiles;
+    }
+    if (contextCountLabel) {
+      if (!contextFilesState.size) {
+        contextCountLabel.textContent = "Nenhum arquivo adicionado.";
+      } else if (contextFilesState.size === 1) {
+        contextCountLabel.textContent = "1 arquivo adicionado.";
+      } else {
+        contextCountLabel.textContent = `${contextFilesState.size} arquivos adicionados.`;
+      }
+    }
+  };
+
+  const showContextFeedback = (message, type = "info") => {
+    if (!contextFeedback) return;
+    contextFeedback.textContent = message;
+    contextFeedback.classList.remove("success", "error", "info", "is-visible");
+    contextFeedback.classList.add(type);
+    contextFeedback.classList.add("is-visible");
+    clearTimeout(contextFeedbackTimeout);
+    contextFeedbackTimeout = setTimeout(() => {
+      contextFeedback.classList.remove("success", "error", "info", "is-visible");
+      contextFeedback.textContent = "";
+    }, 4000);
+  };
+
+  const removeContextFiles = async (paths) => {
+    if (!paths || paths.length === 0) {
+      return { ok: true, deleted: [], errors: [] };
+    }
+    try {
+      const response = await fetch('/upload/remove', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths }),
+      });
+      const payload = await response.json();
+      const deletedRaw = Array.isArray(payload?.deleted) ? payload.deleted : payload?.deleted ? [payload.deleted] : [];
+      const deleted = deletedRaw.map((item) => String(item));
+      const rawErrors = Array.isArray(payload?.errors) ? payload.errors : payload?.errors ? [payload.errors] : [];
+      const errors = rawErrors.map((item) => {
+        if (!item) {
+          return { path: null, error: "erro desconhecido" };
+        }
+        if (typeof item === "string") {
+          return { path: null, error: item };
+        }
+        return item;
+      });
+      const ok = response.ok && payload?.ok !== false && errors.length === 0;
+      return { ok, deleted, errors };
+    } catch (error) {
+      console.warn("Falha ao remover arquivos de contexto:", error);
+      return { ok: false, deleted: [], errors: [{ path: null, error: error.message }] };
+    }
+  };
+
+  const formatFileSize = (size) => {
+    if (size === undefined || size === null) return "";
+    const units = ["B", "KB", "MB", "GB"];
+    let value = size;
+    let unitIndex = 0;
+    while (value >= 1024 && unitIndex < units.length - 1) {
+      value /= 1024;
+      unitIndex += 1;
+    }
+    return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+  };
+
+  const renderContextFiles = () => {
+    contextFilesList.innerHTML = "";
+    const fragment = document.createDocumentFragment();
+    contextFilesState.forEach((entry, key) => {
+      const data = entry || {};
+      const container = document.createElement("div");
+      container.className = "context-file-entry";
+      container.dataset.key = key;
+
+      const displayName = data.displayName || data.filename || data.path?.split("/").pop() || key;
+      if (data.removing) {
+        container.classList.add("is-removing");
+      }
+
+      const info = document.createElement("div");
+      info.className = "file-info";
+
+      const icon = document.createElement("span");
+      icon.className = "file-icon";
+      icon.textContent = data.icon || "📄";
+      info.appendChild(icon);
+
+      const textWrapper = document.createElement("div");
+      textWrapper.className = "file-texts";
+
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "file-name";
+      nameSpan.title = displayName;
+      nameSpan.textContent = displayName;
+      textWrapper.appendChild(nameSpan);
+
+      if (typeof data.size === "number" && data.size >= 0) {
+        const sizeBadge = document.createElement("span");
+        sizeBadge.className = "file-size";
+        sizeBadge.textContent = formatFileSize(data.size);
+        textWrapper.appendChild(sizeBadge);
+      }
+
+      info.appendChild(textWrapper);
+      container.appendChild(info);
+
+      const actions = document.createElement("div");
+      actions.className = "file-actions";
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "remove-file-btn";
+      removeBtn.title = "Remover arquivo do contexto";
+      removeBtn.setAttribute("aria-label", `Remover ${displayName}`);
+      removeBtn.disabled = Boolean(data.removing);
+      removeBtn.textContent = data.removing ? "Removendo..." : "Remover";
+
+      if (data.removing) {
+        const spinner = document.createElement("span");
+        spinner.className = "spinner";
+        spinner.setAttribute("aria-hidden", "true");
+        removeBtn.prepend(spinner);
+      }
+
+      removeBtn.addEventListener("click", async (event) => {
+        event.preventDefault();
+        const current = contextFilesState.get(key);
+        if (!current || current.removing) return;
+
+        contextFilesState.set(key, { ...current, removing: true });
+        renderContextFiles();
+
+        const removalKey = current.path || current.storedName || key;
+        const result = await removeContextFiles([removalKey]);
+        const deletedSet = new Set((result.deleted || []).map((item) => String(item)));
+        const targetKeys = [removalKey, String(removalKey), current.path, current.storedName, key].filter(Boolean);
+        const wasDeleted = targetKeys.some((candidate) => deletedSet.has(candidate));
+
+        if (wasDeleted) {
+          contextFilesState.delete(key);
+          renderContextFiles();
+          showContextFeedback(`Arquivo "${displayName}" removido do contexto.`, "success");
+        } else {
+          const reverted = { ...current, removing: false };
+          contextFilesState.set(key, reverted);
+          renderContextFiles();
+          const errorDetail = (result.errors.find((item) => item && targetKeys.includes(String(item.path))) || result.errors[0] || {});
+          const message = errorDetail?.error ? `Não foi possível remover "${displayName}": ${errorDetail.error}` : `Não foi possível remover "${displayName}".`;
+          showContextFeedback(message, "error");
+        }
+      });
+
+      actions.appendChild(removeBtn);
+      container.appendChild(actions);
+      fragment.appendChild(container);
+    });
+
+    contextFilesList.appendChild(fragment);
+    refreshContextEmptyState();
+  };
+
+  const setAgentPanelCollapsed = (collapsed, options = {}) => {
+    if (!agentPanel) {
+      if (options.source === "toggle" && toggleAgentBtn) {
+        toggleAgentBtn.disabled = false;
+      }
+      if (options.source === "handle" && agentHandleBtn) {
+        agentHandleBtn.disabled = false;
+      }
+      return;
+    }
+    agentPanel.classList.toggle("collapsed", collapsed);
+
+    if (mainContainer) {
+      mainContainer.classList.toggle("agent-collapsed", collapsed);
+    }
+
+    if (toggleAgentBtn) {
+      toggleAgentBtn.classList.toggle("active", collapsed);
+      toggleAgentBtn.setAttribute("aria-pressed", collapsed ? "true" : "false");
+      toggleAgentBtn.title = collapsed ? "Mostrar raciocínio do agente" : "Ocultar raciocínio do agente";
+    }
+
+    if (agentHandleBtn) {
+      agentHandleBtn.setAttribute("aria-hidden", collapsed ? "false" : "true");
+      if (!collapsed) {
+        agentHandleBtn.disabled = false;
+      }
+    }
+
+    if (!options.skipPersist) {
+      try {
+        localStorage.setItem("agent-panel-collapsed", collapsed ? "1" : "0");
+      } catch (error) {
+        console.debug("Não foi possível persistir estado do painel:", error);
+      }
+    }
+
+    if (options.source === "toggle" && toggleAgentBtn) {
+      setTimeout(() => {
+        toggleAgentBtn.disabled = false;
+      }, 320);
+    }
+    if (options.source === "handle" && agentHandleBtn) {
+      setTimeout(() => {
+        agentHandleBtn.disabled = false;
+      }, 320);
+    }
+  };
+
+  const applyStoredTheme = () => {
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const storedTheme = localStorage.getItem("lori-theme");
+    const shouldUseLight = storedTheme ? storedTheme === "light" : !prefersDark;
+    document.body.classList.toggle("light-theme", shouldUseLight);
+  };
+
+  applyStoredTheme();
+  const storedAgentState = localStorage.getItem("agent-panel-collapsed");
+  const initialAgentCollapsed = storedAgentState === "1" ? true : storedAgentState === "0" ? false : agentPanel?.classList.contains("collapsed");
+  setAgentPanelCollapsed(Boolean(initialAgentCollapsed), { skipPersist: true });
 
   // --- Carregar Histórico ---
   const loadHistory = async () => {
@@ -216,10 +457,9 @@ document.addEventListener("DOMContentLoaded", () => {
     currentHistory.pop(); // Remove a div vazia do assistente que acabamos de adicionar
 
     // Coleta os caminhos dos arquivos de contexto
-    const contextFiles = [];
-    contextFilesList.querySelectorAll('.context-file-entry').forEach(entry => {
-      contextFiles.push(entry.dataset.path);
-    });
+    const contextFiles = Array.from(contextFilesState.values())
+      .map((item) => item.path)
+      .filter(Boolean);
 
     // Envia a mensagem via WebSocket
     socket.send(JSON.stringify({
@@ -341,11 +581,98 @@ document.addEventListener("DOMContentLoaded", () => {
     historyPanel.classList.toggle('collapsed');
   });
 
+  if (toggleAgentBtn) {
+    toggleAgentBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (toggleAgentBtn.disabled) return;
+      toggleAgentBtn.disabled = true;
+      const collapsed = !agentPanel.classList.contains('collapsed');
+      setAgentPanelCollapsed(collapsed, { source: "toggle" });
+    });
+  }
+
+  if (agentHandleBtn) {
+    agentHandleBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (agentHandleBtn.disabled) return;
+      agentHandleBtn.disabled = true;
+      setAgentPanelCollapsed(false, { source: "handle" });
+    });
+  }
+
+  if (clearContextBtn) {
+    const clearContextOriginalLabel = clearContextBtn.textContent;
+    clearContextBtn.addEventListener('click', async () => {
+      const entries = Array.from(contextFilesState.entries());
+      if (!entries.length) {
+        return;
+      }
+      clearContextBtn.disabled = true;
+      clearContextBtn.textContent = 'Limpando...';
+      clearContextBtn.dataset.loading = "true";
+      entries.forEach(([key, info]) => {
+        const entry = info || {};
+        contextFilesState.set(key, { ...entry, removing: true });
+      });
+      renderContextFiles();
+
+      const removalTargets = entries.map(([key, info]) => {
+        const entry = info || {};
+        return entry.path || entry.storedName || key;
+      });
+      const result = await removeContextFiles(removalTargets);
+
+      const deletedSet = new Set((result.deleted || []).map((item) => String(item)));
+      const hadErrors = (result.errors || []).length > 0;
+
+      let successCount = 0;
+      entries.forEach(([key, info], idx) => {
+        const entry = info || {};
+        const target = removalTargets[idx];
+        const candidateKeys = [target, String(target), entry.path, key].filter(Boolean);
+        const wasDeleted = candidateKeys.some((candidate) => deletedSet.has(candidate));
+        if (wasDeleted) {
+          contextFilesState.delete(key);
+          successCount += 1;
+        } else {
+          contextFilesState.set(key, { ...entry, removing: false });
+        }
+      });
+
+      if (hadErrors) {
+        const firstError = result.errors[0];
+        const detail = firstError?.error ? ` Detalhe: ${firstError.error}.` : "";
+        const prefix = successCount > 0 ? "Alguns arquivos foram removidos, mas outros falharam." : "Alguns arquivos não puderam ser removidos.";
+        showContextFeedback(`${prefix}${detail}`, successCount > 0 ? "info" : "error");
+      } else if (successCount > 0) {
+        const message = successCount === 1 ? "Arquivo de contexto removido." : "Arquivos de contexto removidos.";
+        showContextFeedback(message, "success");
+      } else {
+        showContextFeedback("Nenhum arquivo foi removido.", "info");
+      }
+
+      renderContextFiles();
+      clearContextBtn.textContent = clearContextOriginalLabel;
+      delete clearContextBtn.dataset.loading;
+      clearContextBtn.disabled = contextFilesState.size === 0;
+    });
+  }
+
+  if (toggleThemeBtn) {
+    toggleThemeBtn.addEventListener('click', () => {
+      const willBeLight = !document.body.classList.contains('light-theme');
+      document.body.classList.toggle('light-theme', willBeLight);
+      localStorage.setItem('lori-theme', willBeLight ? 'light' : 'dark');
+    });
+  }
+
   const startNewChat = () => {
     conversation.innerHTML = `
-      <div class="message assistant-message">
-          <strong>Lori</strong>
-          <div>Olá! Como posso ajudar hoje?</div>
+      <div class="message-wrapper assistant-wrapper">
+        <div class="message assistant-message">
+            <strong>Lori</strong>
+            <div>Olá! Como posso ajudar hoje?</div>
+        </div>
       </div>
     `;
     document.querySelectorAll('.history-entry.active').forEach(el => el.classList.remove('active'));
@@ -373,33 +700,68 @@ document.addEventListener("DOMContentLoaded", () => {
         body: formData,
       });
       const data = await response.json();
-      if (data.ok) {
+      if (data.ok && Array.isArray(data.files)) {
         data.files.forEach(addFileToContextList);
+        if (data.files.length) {
+          const count = data.files.length;
+          const message = count === 1 ? `Arquivo "${data.files[0].display_name || data.files[0].filename}" adicionado ao contexto.` : `${count} arquivos adicionados ao contexto.`;
+          showContextFeedback(message, "success");
+        }
       } else {
-        alert(`Erro no upload: ${data.error}`);
+        showContextFeedback(`Erro no upload: ${data.error || "Falha desconhecida."}`, "error");
       }
     } catch (error) {
       console.error("Falha no upload:", error);
-      alert("Erro de conexão durante o upload.");
+      showContextFeedback("Erro de conexão durante o upload.", "error");
     }
 
     // Limpa o input para permitir o upload do mesmo arquivo novamente
     fileInput.value = '';
   });
 
-  const addFileToContextList = (file) => {
-    const fileEntry = document.createElement('div');
-    fileEntry.className = 'context-file-entry';
-    fileEntry.dataset.path = file.path;
-    fileEntry.innerHTML = `
-      <span>${file.filename}</span>
-      <button class="remove-file-btn">✖</button>
-    `;
-    contextFilesList.appendChild(fileEntry);
+ const addFileToContextList = (file) => {
+    if (!file) {
+      return;
+    }
+    const path = file.path || file.local_path || "";
+    if (!path) {
+      showContextFeedback("Não foi possível adicionar o arquivo ao contexto (caminho inválido).", "error");
+      return;
+    }
+    const storedName = file.stored_name || file.storedName || "";
+    const key = storedName || path || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    if (contextFilesState.has(key)) {
+      return;
+    }
 
-    fileEntry.querySelector('.remove-file-btn').addEventListener('click', () => {
-      fileEntry.remove();
+    const label = file.display_name || file.filename || path.split("/").pop() || storedName || "arquivo";
+    const extension = (label.split(".").pop() || "").toLowerCase();
+    const iconMap = {
+      pdf: "📕",
+      csv: "📑",
+      xls: "📊",
+      xlsx: "📊",
+      txt: "📄",
+      md: "📝",
+      json: "🗂️",
+      doc: "📘",
+      docx: "📘",
+      png: "🖼️",
+      jpg: "🖼️",
+      jpeg: "🖼️",
+      gif: "🖼️",
+    };
+    const icon = iconMap[extension] || "📄";
+    contextFilesState.set(key, {
+      displayName: label,
+      filename: label,
+      size: file.size,
+      path,
+      storedName,
+      icon,
+      removing: false,
     });
+    renderContextFiles();
   };
 
   const enhanceCodeBlocks = (container) => {
@@ -446,6 +808,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Carrega o histórico ao iniciar a página
   loadHistory();
+  refreshContextEmptyState();
   
   // Adiciona evento ao botão de limpar tudo
   clearHistoryBtn.addEventListener('click', deleteAllHistory);
