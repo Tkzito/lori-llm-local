@@ -32,6 +32,7 @@ O script cuida de:
 4. Encerrar o Ollama
 5. Iniciar tudo (Ollama + Web UI em segundo plano)
 6. Encerrar tudo (Web UI + Ollama)
+7. Visualizar logs (Ollama, Web UI ou ambos)
 
 O menu mostra o status atual de cada componente e mantém a Web UI sempre em `http://127.0.0.1:8001/`. Quando iniciada em segundo plano, os logs ficam em `.lori_web.log` e o PID em `.lori_web.pid`.
 

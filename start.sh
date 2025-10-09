@@ -15,6 +15,7 @@ WEB_PID_FILE="$SCRIPT_DIR/.lori_web.pid"
 WEB_LOG_FILE="${LORI_WEB_LOG:-$SCRIPT_DIR/.lori_web.log}"
 OLLAMA_PID_FILE="$SCRIPT_DIR/.lori_ollama.pid"
 OLLAMA_LOG_FILE="${LORI_OLLAMA_LOG:-$SCRIPT_DIR/.lori_ollama.log}"
+LOG_SCRIPT="$SCRIPT_DIR/lori-logs.sh"
 OLLAMA_HOST="$(python - <<'PY'
 from urllib.parse import urlparse
 import os
@@ -131,6 +132,41 @@ cleanup_orphan_web_instances() {
   pkill -f "watchfiles.*web.main:app" 2>/dev/null || true
 }
 
+view_logs() {
+  if [[ ! -x "$LOG_SCRIPT" ]]; then
+    echo "[erro] Script de logs não encontrado em $LOG_SCRIPT."
+    echo "       Certifique-se de que 'lori-logs.sh' existe e tem permissão de execução."
+    return 1
+  fi
+
+  while true; do
+    echo_divider
+    echo "Visualizar logs (Ctrl+C para sair do acompanhamento)"
+    echo "  1) Ollama"
+    echo "  2) Web UI"
+    echo "  3) Ambos"
+    echo "  q) Voltar"
+    read -rp "Escolha uma opção: " log_choice
+    case "${log_choice,,}" in
+      1)
+        "$LOG_SCRIPT" ollama || true
+        ;;
+      2)
+        "$LOG_SCRIPT" web || true
+        ;;
+      3)
+        "$LOG_SCRIPT" ambos || true
+        ;;
+      q|quit|exit)
+        break
+        ;;
+      *)
+        echo "Opção inválida."
+        ;;
+    esac
+  done
+}
+
 stop_ollama() {
   if ollama_is_running; then
     echo "[info] Encerrando Ollama..."
@@ -228,6 +264,7 @@ Menu Lori Assistant
   4) Encerrar Ollama
   5) Iniciar tudo (Ollama + Web UI)
   6) Encerrar tudo (Web UI + Ollama)
+  7) Visualizar logs
   q) Sair
 MENU
 }
@@ -271,6 +308,9 @@ while true; do
     6)
       stop_web_background
       stop_ollama
+      ;;
+    7)
+      view_logs
       ;;
     q|quit|exit)
       echo "Até mais!"
