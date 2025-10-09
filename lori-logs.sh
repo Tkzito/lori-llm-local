@@ -32,7 +32,7 @@ follow_log() {
   if [[ ! -s "$file" ]]; then
     echo "[log] (sem entradas ainda; aguardando novas linhas...)"
   fi
-  tail -n +1 -F "$file"
+  tail -n +1 -F "$file" 2>/dev/null
 }
 
 if [[ $# -eq 0 || "$1" == "help" ]]; then
@@ -58,7 +58,7 @@ case "$1" in
     if [[ ! -s "$OLLAMA_LOG" && ! -s "$WEB_LOG" ]]; then
       echo "[log] (sem entradas ainda; aguardando novas linhas...)"
     fi
-    tail -n +1 -F "$OLLAMA_LOG" "$WEB_LOG"
+    tail -n +1 -F "$OLLAMA_LOG" "$WEB_LOG" 2>/dev/null
     ;;
   *)
     echo "[erro] Argumento desconhecido: $1" >&2
