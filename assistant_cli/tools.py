@@ -811,14 +811,41 @@ _CRYPTO_ID_MAP: Dict[str, str] = {
     "pepe": "pepe",
 }
 
+for _alias, _asset in list(_CRYPTO_ID_MAP.items()):
+    _alias_compact = _alias.replace(" ", "")
+    if _alias_compact and _alias_compact not in _CRYPTO_ID_MAP:
+        _CRYPTO_ID_MAP[_alias_compact] = _asset
+
 
 def _resolve_asset(symbol: str, vs_override: list[str] | None = None) -> tuple[str | None, list[str]]:
-    key = _norm(symbol).replace(" ", "")
     vs = vs_override or ["usd", "brl"]
-    if key.startswith("id:") and len(key) > 3:
-        return key[3:], vs
-    asset_id = _CRYPTO_ID_MAP.get(key)
-    return (asset_id, vs)
+    norm_symbol = _norm(symbol)
+    if not norm_symbol:
+        return None, vs
+
+    if norm_symbol.startswith("id:") and len(norm_symbol) > 3:
+        return norm_symbol[3:], vs
+
+    candidates: list[str] = [
+        norm_symbol,
+        norm_symbol.replace(" ", ""),
+    ]
+
+    tokens = [tok for tok in norm_symbol.split() if tok]
+    for size in range(len(tokens), 0, -1):
+        for idx in range(len(tokens) - size + 1):
+            chunk = " ".join(tokens[idx : idx + size])
+            candidates.append(chunk)
+            candidates.append(chunk.replace(" ", ""))
+
+    for cand in candidates:
+        if not cand:
+            continue
+        asset_id = _CRYPTO_ID_MAP.get(cand)
+        if asset_id:
+            return asset_id, vs
+
+    return None, vs
 
 # País -> fuso padrão (capital/maior cidade). Não exaustivo, mas cobre a maioria dos casos.
 _COUNTRY_DEFAULT_TZ: Dict[str, str] = {

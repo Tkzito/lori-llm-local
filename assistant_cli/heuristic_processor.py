@@ -5,7 +5,7 @@ import re
 import unicodedata
 from typing import Any, TYPE_CHECKING, Iterator
 
-from .tools import call_tool
+from .tools import call_tool, _CRYPTO_ID_MAP
 from .config import ASSISTANT_VERBOSE
 
 if TYPE_CHECKING:
@@ -213,15 +213,66 @@ class HeuristicProcessor:
             return currency_aliases.get(token_norm)
 
         def handle_price_search(p, m):
-            asset = m.group(1).strip()
-            query = f"preço atual {asset}"
-            self.agent._last_asset = asset
-            self.agent._last_price_vs = ["brl", "usd"]
+            raw_segment = (m.group(1) or "").strip()
+            if not raw_segment:
+                return None
+
+            normalized_segment = unicodedata.normalize("NFKD", raw_segment).encode("ascii", "ignore").decode("ascii")
+            normalized_segment = "".join(ch if ch.isalnum() or ch in " ,/;+-&" else " " for ch in normalized_segment.lower())
+            normalized_segment = re.sub(r"\s+", " ", normalized_segment).strip()
+
+            split_parts = re.split(r"[,/;+]|(?:\s+(?:e|ou|and|&)\s+)", normalized_segment) if normalized_segment else []
+            parts = [part.strip() for part in split_parts if part and part.strip()]
+
+            connector_tokens = {
+                "em", "no", "na", "nos", "nas", "do", "da", "dos", "das", "de", "pra", "para", "por",
+                "contra", "versus", "vs", "sobre", "aprox", "aproximadamente", "aproximado",
+                "hoje", "agora", "atual", "atualmente", "midia", "media",
+            }
+            asset_noise_tokens = {
+                "preco", "preço", "valor", "cotacao", "cotação", "ultimo", "último", "dados",
+                "um", "uma", "tabela", "simples", "lista", "tabelinha", "coluna", "linha",
+            }
+
+            assets: list[str] = []
+            vs_tokens: list[str] = []
+
+            analysis_chunks = parts or ([normalized_segment] if normalized_segment else [])
+            for chunk in analysis_chunks:
+                tokens = [tok for tok in chunk.split() if tok]
+                asset_bits: list[str] = []
+                for tok in tokens:
+                    if tok in currency_aliases:
+                        vs_tokens.append(currency_aliases[tok].lower())
+                        continue
+                    if tok in connector_tokens or tok in asset_noise_tokens:
+                        continue
+                    asset_bits.append(tok)
+                asset_name = " ".join(asset_bits).strip()
+                if asset_name:
+                    assets.append(asset_name)
+
+            if not assets:
+                assets = [normalized_segment or raw_segment.lower()]
+
+            assets = list(dict.fromkeys(assets))
+            vs_list = list(dict.fromkeys(vs_tokens)) or ["brl", "usd"]
+
+            self.agent._last_asset = assets[0]
+            self.agent._last_price_vs = list(vs_list)
+
+            query_focus = ", ".join(assets)
+            query = f"preço atual {query_focus or raw_segment}"
             search_args = prepare_search_query(p, query, 3)
-            return [
-                {"tool": "crypto.price", "args": {"asset": asset, "vs_currencies": ["brl", "usd"]}},
-                {"tool": "web.search", "args": search_args},
-            ]
+
+            tool_calls: list[dict[str, Any]] = []
+            for asset_name in assets:
+                tool_calls.append({
+                    "tool": "crypto.price",
+                    "args": {"asset": asset_name, "vs_currencies": list(vs_list)},
+                })
+            tool_calls.append({"tool": "web.search", "args": search_args})
+            return tool_calls
 
         def handle_fx_convert(p, m):
             norm_text = unicodedata.normalize("NFKD", p or "").encode("ascii", "ignore").decode("ascii").lower()
@@ -238,6 +289,8 @@ class HeuristicProcessor:
                         amount = 1.0
 
             tokens = norm_text.split()
+            if any(tok in _CRYPTO_ID_MAP for tok in tokens):
+                return None
             base_code, target_code = None, None
             for tok in tokens:
                 code = normalize_currency(tok)

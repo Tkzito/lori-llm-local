@@ -21,9 +21,52 @@ document.addEventListener("DOMContentLoaded", () => {
   const agentHandleBtn = document.getElementById("agent-handle-btn");
   const contextFeedback = document.getElementById("context-feedback");
   const contextCountLabel = document.getElementById("context-count");
+  const historyHandleBtn = document.getElementById("history-handle-btn");
   let socket;
   const contextFilesState = new Map(); // key => { displayName, size, path, storedName, removing }
   let contextFeedbackTimeout;
+
+  const setHistoryPanelCollapsed = (collapsed, options = {}) => {
+    if (!historyPanel) {
+      if (toggleHistoryBtn) toggleHistoryBtn.disabled = false;
+      return;
+    }
+
+    historyPanel.classList.toggle("collapsed", collapsed);
+    if (mainContainer) {
+      mainContainer.classList.toggle("history-collapsed", collapsed);
+    }
+
+    if (toggleHistoryBtn) {
+      toggleHistoryBtn.classList.toggle("active", collapsed);
+      toggleHistoryBtn.setAttribute("aria-pressed", collapsed ? "true" : "false");
+      toggleHistoryBtn.title = collapsed ? "Mostrar histórico" : "Ocultar histórico";
+      if (options.source === "toggle") {
+        toggleHistoryBtn.disabled = true;
+        setTimeout(() => {
+          toggleHistoryBtn.disabled = false;
+        }, 320);
+      } else {
+        toggleHistoryBtn.disabled = false;
+      }
+    }
+
+    if (historyHandleBtn) {
+      historyHandleBtn.setAttribute("aria-hidden", collapsed ? "false" : "true");
+      historyHandleBtn.classList.toggle("is-visible", collapsed);
+      if (!collapsed) {
+        historyHandleBtn.disabled = false;
+      }
+    }
+
+    if (!options.skipPersist) {
+      try {
+        localStorage.setItem("history-panel-collapsed", collapsed ? "1" : "0");
+      } catch (error) {
+        console.debug("Não foi possível persistir estado do histórico:", error);
+      }
+    }
+  };
 
   const refreshContextEmptyState = () => {
     const hasFiles = contextFilesState.size > 0;
@@ -252,6 +295,14 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   applyStoredTheme();
+  const storedHistoryState = localStorage.getItem("history-panel-collapsed");
+  const initialHistoryCollapsed = storedHistoryState === "1"
+    ? true
+    : storedHistoryState === "0"
+      ? false
+      : historyPanel?.classList.contains("collapsed");
+  setHistoryPanelCollapsed(Boolean(initialHistoryCollapsed), { skipPersist: true });
+
   const storedAgentState = localStorage.getItem("agent-panel-collapsed");
   const initialAgentCollapsed = storedAgentState === "1" ? true : storedAgentState === "0" ? false : agentPanel?.classList.contains("collapsed");
   setAgentPanelCollapsed(Boolean(initialAgentCollapsed), { skipPersist: true });
@@ -272,50 +323,120 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      if (data.history && data.history.length > 0) {
-        historyContainer.innerHTML = ""; // Limpa a mensagem de "carregando"
+      let groups = Array.isArray(data.groups) ? data.groups : [];
+      if (!groups.length && Array.isArray(data.history) && data.history.length) {
+        const fallbackGroups = new Map();
         data.history.forEach((entry) => {
+          try {
+            const ts = entry.started_at || entry.ts;
+            const dateObj = ts ? new Date(ts) : new Date();
+            const key = dateObj.toISOString().slice(0, 10);
+            if (!fallbackGroups.has(key)) {
+              const label = (() => {
+                const today = new Date();
+                const diff = Math.floor((today - new Date(key)) / (24 * 60 * 60 * 1000));
+                if (diff === 0) return "Hoje";
+                if (diff === 1) return "Ontem";
+                if (diff > 1 && diff < 7) {
+                  return dateObj.toLocaleDateString("pt-BR", { weekday: "long" });
+                }
+                return dateObj.toLocaleDateString("pt-BR");
+              })();
+              fallbackGroups.set(key, { date: key, label, conversations: [] });
+            }
+            fallbackGroups.get(key).conversations.push({
+              ts: entry.ts,
+              title: entry.title || "Nova Conversa",
+              started_at: ts || dateObj.toISOString(),
+              message_count: entry.message_count || entry.messages_count || 0,
+              preview: entry.preview || "",
+            });
+          } catch (_) {
+            // ignora entradas mal formadas
+          }
+        });
+        groups = Array.from(fallbackGroups.values()).sort((a, b) => b.date.localeCompare(a.date));
+        groups.forEach((group) => {
+          group.conversations.sort((a, b) => (b.started_at || "").localeCompare(a.started_at || ""));
+        });
+      }
+      if (!groups.length) {
+        historyContainer.innerHTML = '<div class="history-entry"><em>Nenhum histórico encontrado.</em></div>';
+        return;
+      }
+
+      historyContainer.innerHTML = "";
+
+      groups.forEach((group) => {
+        const wrapper = document.createElement("div");
+        wrapper.className = "history-group";
+
+        const header = document.createElement("div");
+        header.className = "history-group-header";
+        const label = document.createElement("span");
+        label.className = "history-group-title";
+        label.textContent = group.label || group.date || "Conversas";
+        header.appendChild(label);
+        const badge = document.createElement("span");
+        badge.className = "history-group-count";
+        badge.textContent = `${(group.conversations || []).length} conversa${(group.conversations || []).length === 1 ? "" : "s"}`;
+        header.appendChild(badge);
+        wrapper.appendChild(header);
+
+        const list = document.createElement("div");
+        list.className = "history-group-list";
+
+        (group.conversations || []).forEach((entry) => {
           const historyEntry = document.createElement("div");
           historyEntry.className = "history-entry";
-          historyEntry.dataset.ts = entry.ts; // Armazena o ID da conversa
+          historyEntry.dataset.ts = entry.ts;
+
+          const content = document.createElement("div");
+          content.className = "history-entry-content";
 
           const titleDiv = document.createElement("div");
           titleDiv.className = "history-title";
-          titleDiv.textContent = entry.title;
+          titleDiv.textContent = entry.title || "Nova Conversa";
+          content.appendChild(titleDiv);
 
-          const dateDiv = document.createElement("div");
-          dateDiv.className = "history-date";
-          // Formata a data para ser mais amigável
-          const date = new Date(entry.ts);
-          dateDiv.textContent = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+          if (entry.preview) {
+            const previewDiv = document.createElement("div");
+            previewDiv.className = "history-preview";
+            previewDiv.textContent = entry.preview;
+            content.appendChild(previewDiv);
+          }
 
-          historyEntry.appendChild(titleDiv);
-          historyEntry.appendChild(dateDiv);
-          historyContainer.appendChild(historyEntry);
+          const metaDiv = document.createElement("div");
+          metaDiv.className = "history-meta";
+          const date = entry.started_at ? new Date(entry.started_at) : new Date(entry.ts);
+          metaDiv.textContent = `${date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} • ${entry.message_count || 0} mensagens`;
+          content.appendChild(metaDiv);
 
-          // Adiciona ícone de exclusão
+          historyEntry.appendChild(content);
+
           const deleteIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
           deleteIcon.setAttribute("class", "delete-icon");
           deleteIcon.setAttribute("viewBox", "0 0 20 20");
           deleteIcon.setAttribute("fill", "currentColor");
           deleteIcon.innerHTML = `<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />`;
           historyEntry.appendChild(deleteIcon);
-          deleteIcon.addEventListener('click', (e) => {
-            e.stopPropagation(); // Impede que o clique carregue a conversa
+          deleteIcon.addEventListener("click", (e) => {
+            e.stopPropagation();
             deleteConversation(entry.ts, historyEntry);
           });
 
-          // Adiciona o evento de clique
           historyEntry.addEventListener("click", () => {
             loadConversation(entry.ts);
-            document.querySelectorAll('.history-entry.active').forEach(el => el.classList.remove('active'));
+            historyContainer.querySelectorAll('.history-entry.active').forEach(el => el.classList.remove('active'));
             historyEntry.classList.add('active');
           });
+
+          list.appendChild(historyEntry);
         });
-      } else {
-        historyContainer.innerHTML =
-          '<div class="history-entry"><em>Nenhum histórico encontrado.</em></div>';
-      }
+
+        wrapper.appendChild(list);
+        historyContainer.appendChild(wrapper);
+      });
     } catch (error) {
       console.error("Falha ao buscar histórico:", error);
       historyContainer.innerHTML =
@@ -376,7 +497,14 @@ document.addEventListener("DOMContentLoaded", () => {
       const response = await fetch(`/history/${conversationId}`, { method: 'DELETE' });
       const data = await response.json();
       if (data.ok) {
+        const groupNode = element.closest(".history-group");
         element.remove();
+        if (groupNode && !groupNode.querySelector(".history-entry")) {
+          groupNode.remove();
+        }
+        if (!historyContainer.querySelector(".history-entry")) {
+          historyContainer.innerHTML = '<div class="history-entry"><em>Nenhum histórico encontrado.</em></div>';
+        }
       } else {
         alert("Erro ao excluir a conversa.");
       }
@@ -577,9 +705,14 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   };
 
-  toggleHistoryBtn.addEventListener('click', () => {
-    historyPanel.classList.toggle('collapsed');
-  });
+  if (toggleHistoryBtn) {
+    toggleHistoryBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (toggleHistoryBtn.disabled) return;
+      const nextState = !(historyPanel?.classList.contains('collapsed') ?? false);
+      setHistoryPanelCollapsed(nextState, { source: "toggle" });
+    });
+  }
 
   if (toggleAgentBtn) {
     toggleAgentBtn.addEventListener('click', (event) => {
@@ -597,6 +730,18 @@ document.addEventListener("DOMContentLoaded", () => {
       if (agentHandleBtn.disabled) return;
       agentHandleBtn.disabled = true;
       setAgentPanelCollapsed(false, { source: "handle" });
+    });
+  }
+
+  if (historyHandleBtn) {
+    historyHandleBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (historyHandleBtn.disabled) return;
+      historyHandleBtn.disabled = true;
+      setHistoryPanelCollapsed(false, { source: "handle" });
+      setTimeout(() => {
+        historyHandleBtn.disabled = false;
+      }, 320);
     });
   }
 

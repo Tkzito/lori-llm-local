@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from assistant_cli.config import HISTORY_PATH, UPLOADS_DIR
+from datetime import datetime, timezone, date as date_cls
 
 try:
     import fitz  # PyMuPDF
@@ -50,9 +51,41 @@ async def read_root():
     return (Path(__file__).parent / "static" / "index.html").read_text()
 
 
+def _parse_timestamp(ts_str: str | None) -> datetime | None:
+    if not ts_str:
+        return None
+    try:
+        if ts_str.endswith("Z"):
+            ts_str = ts_str[:-1] + "+00:00"
+        return datetime.fromisoformat(ts_str)
+    except Exception:
+        return None
+
+
+def _format_group_label(group_date: date_cls, now_utc: datetime) -> str:
+    today = now_utc.date()
+    delta = today - group_date
+    if delta.days == 0:
+        return "Hoje"
+    if delta.days == 1:
+        return "Ontem"
+    if 0 < delta.days < 7:
+        weekday_names = {
+            0: "Segunda-feira",
+            1: "Terça-feira",
+            2: "Quarta-feira",
+            3: "Quinta-feira",
+            4: "Sexta-feira",
+            5: "Sábado",
+            6: "Domingo",
+        }
+        return weekday_names.get(group_date.weekday(), group_date.strftime("%d/%m/%Y"))
+    return group_date.strftime("%d/%m/%Y")
+
+
 @app.get("/history")
 async def get_history():
-    """Retorna um resumo de todas as conversas do histórico."""
+    """Retorna o histórico agrupado por data e conversa."""
     history_files = sorted(
         Path(HISTORY_PATH.parent).glob("history-*.jsonl"),
         reverse=True
@@ -71,7 +104,9 @@ async def get_history():
     # Ordena todas as conversas pela data, da mais recente para a mais antiga
     all_conversations.sort(key=lambda x: x.get("ts", ""), reverse=True)
 
-    history = []
+    groups: dict[str, dict] = {}
+    now_utc = datetime.now(timezone.utc)
+
     for entry in all_conversations:
         # Pega a primeira mensagem do usuário como título
         title = "Nova Conversa"
@@ -80,12 +115,38 @@ async def get_history():
                 title = msg.get("content", "Nova Conversa").strip()
                 break
 
-        history.append({
-            "ts": entry.get("ts"),
-            "title": title,
+        ts_raw = entry.get("ts")
+        ts_dt = _parse_timestamp(ts_raw) or now_utc
+        group_key = ts_dt.date().isoformat()
+        if group_key not in groups:
+            groups[group_key] = {
+                "date": group_key,
+                "label": _format_group_label(ts_dt.date(), now_utc),
+                "conversations": []
+            }
+
+        assistant_preview = ""
+        for msg in entry.get("messages", []):
+            if msg.get("role") == "assistant":
+                assistant_preview = msg.get("content", "").strip()
+                if assistant_preview:
+                    break
+
+        groups[group_key]["conversations"].append({
+            "ts": ts_raw,
+            "title": title or "Nova Conversa",
+            "started_at": ts_dt.isoformat(),
+            "message_count": len(entry.get("messages", [])),
+            "preview": assistant_preview[:160] if assistant_preview else "",
         })
 
-    return {"history": history}
+    ordered_groups = sorted(groups.values(), key=lambda g: g["date"], reverse=True)
+    flat_history: list[dict] = []
+    for group in ordered_groups:
+        group["conversations"].sort(key=lambda c: c["started_at"], reverse=True)
+        flat_history.extend(group["conversations"])
+
+    return {"groups": ordered_groups, "history": flat_history}
 
 
 @app.get("/history/{conversation_id}")

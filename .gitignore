@@ -13,3 +13,11 @@ build/
 # IDEs
 .vscode/
 .idea/
+
+# Build artifacts
+.pytest_cache/
+assistant_cli.egg-info/
+
+# Log files
+.lori_*.log
+.lori_*.pid

@@ -35,31 +35,79 @@ echo_divider() {
   printf '\n%s\n' "----------------------------------------"
 }
 
-web_is_running() {
+web_pid_from_file() {
   if [[ -f "$WEB_PID_FILE" ]]; then
-    local pid
-    pid=$(cat "$WEB_PID_FILE" 2>/dev/null || true)
-    if [[ -n "$pid" && -d "/proc/$pid" ]]; then
-      return 0
-    fi
+    cat "$WEB_PID_FILE" 2>/dev/null || true
   fi
-  pgrep -f "uvicorn .*web.main:app" >/dev/null 2>&1
+}
+
+web_pid_alive() {
+  local pid
+  pid="$(web_pid_from_file)"
+  if [[ -n "$pid" && -d "/proc/$pid" ]]; then
+    return 0
+  fi
+  return 1
+}
+
+web_external_pid() {
+  pgrep -f "uvicorn .*web.main:app" 2>/dev/null | head -n 1
+}
+
+web_is_managed() {
+  web_pid_alive
+}
+
+web_is_running() {
+  if web_pid_alive; then
+    return 0
+  fi
+  local external
+  external="$(web_external_pid)"
+  [[ -n "$external" ]]
 }
 
 web_has_reloader() {
   pgrep -f "watchfiles.*web.main:app" >/dev/null 2>&1
 }
 
+ollama_pid_from_file() {
+  if [[ -f "$OLLAMA_PID_FILE" ]]; then
+    cat "$OLLAMA_PID_FILE" 2>/dev/null || true
+  fi
+}
+
+ollama_pid_alive() {
+  local pid
+  pid="$(ollama_pid_from_file)"
+  if [[ -n "$pid" && -d "/proc/$pid" ]]; then
+    return 0
+  fi
+  return 1
+}
+
+ollama_process_pid() {
+  pgrep -f "ollama serve" 2>/dev/null | head -n 1
+}
+
+ollama_is_managed() {
+  ollama_pid_alive
+}
+
 print_status() {
   local ollama_status="parado"
   local web_status="parada"
 
-  if ollama_is_running; then
-    ollama_status="ativo ($OLLAMA_URL)"
+  if ollama_is_managed; then
+    ollama_status="ativo (gerenciado, $OLLAMA_URL)"
+  elif ollama_is_running; then
+    ollama_status="ativo (fora do start.sh)"
   fi
 
-  if web_is_running; then
-    web_status="ativa (http://$WEB_HOST:$WEB_PORT/)"
+  if web_is_managed; then
+    web_status="ativa (gerenciada, http://$WEB_HOST:$WEB_PORT/)"
+  elif web_is_running; then
+    web_status="ativa (fora do start.sh)"
   fi
 
   printf '  %-6s %s\n' "Ollama:" "$ollama_status"
@@ -67,9 +115,23 @@ print_status() {
 }
 
 start_web_background() {
-  if web_is_running; then
+  if web_is_managed; then
     echo "[ok] Web UI já está rodando em http://$WEB_HOST:$WEB_PORT/"
     return 0
+  fi
+
+  if web_is_running; then
+    echo "[alerta] A Web UI está ativa, mas foi iniciada fora deste script."
+    echo "[alerta] Para ativar o logging em $WEB_LOG_FILE, ela precisa ser reiniciada."
+    read -rp "Encerrar a instância atual e iniciar novamente? [s/N]: " restart_web
+    restart_web=${restart_web,,}
+    if [[ "$restart_web" == "s" || "$restart_web" == "sim" || "$restart_web" == "y" || "$restart_web" == "yes" ]]; then
+      pkill -f "uvicorn .*web.main:app" 2>/dev/null || true
+      sleep 1
+    else
+      echo "[info] Mantendo a instância atual sem logging gerenciado."
+      return 0
+    fi
   fi
 
   ensure_bootstrap
@@ -103,9 +165,9 @@ stop_web_background() {
   fi
 
   if web_is_running; then
-    local pid
-    pid=$(cat "$WEB_PID_FILE" 2>/dev/null || true)
     [[ $quiet -eq 0 ]] && echo "[info] Encerrando Web UI..."
+    local pid
+    pid="$(web_pid_from_file)"
     if [[ -n "$pid" && -d "/proc/$pid" ]]; then
       kill "$pid" 2>/dev/null || true
       sleep 1
@@ -209,6 +271,18 @@ start_ollama() {
     echo "[erro] Ollama não encontrado no PATH. Instale ou exporte OLLAMA_BASE_URL." >&2
     return 1
   fi
+  if ! ollama_pid_alive && ollama_is_running; then
+    echo "[alerta] Ollama está ativo fora deste script. Reinicie para capturar logs."
+    read -rp "Encerrar a instância atual e iniciar novamente? [s/N]: " restart_ollama
+    restart_ollama=${restart_ollama,,}
+    if [[ "$restart_ollama" == "s" || "$restart_ollama" == "sim" || "$restart_ollama" == "y" || "$restart_ollama" == "yes" ]]; then
+      pkill -f "ollama serve" 2>/dev/null || true
+      sleep 1
+    else
+      echo "[info] Mantendo a instância atual sem logging gerenciado."
+      return 0
+    fi
+  fi
   echo "[info] Iniciando Ollama…"
   touch "$OLLAMA_LOG_FILE"
   nohup "$OLLAMA_BINARY" serve >"$OLLAMA_LOG_FILE" 2>&1 &
@@ -231,9 +305,22 @@ start_ollama() {
 }
 
 ensure_ollama() {
-  if ollama_is_running; then
+  if ollama_is_managed; then
     echo "[ok] Ollama já está rodando em $OLLAMA_URL."
     return 0
+  fi
+  if ollama_is_running; then
+    echo "[alerta] Ollama está ativo, mas foi iniciado fora deste script."
+    read -rp "Encerrar e reiniciar para ativar logging? [s/N]: " restart_ollama
+    restart_ollama=${restart_ollama,,}
+    if [[ "$restart_ollama" == "s" || "$restart_ollama" == "sim" || "$restart_ollama" == "y" || "$restart_ollama" == "yes" ]]; then
+      pkill -f "ollama serve" 2>/dev/null || true
+      sleep 1
+    else
+      echo "[info] Continuando sem logging gerenciado."
+      rm -f "$OLLAMA_PID_FILE"
+      return 1
+    fi
   fi
   echo "[alerta] Ollama não está respondendo em $OLLAMA_URL."
   read -rp "Deseja iniciar 'ollama serve' agora? [s/N]: " ans

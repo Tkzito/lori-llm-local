@@ -8,6 +8,12 @@ Lori é uma assistente local para linha de comando e navegador construída sobre
 
 ---
 
+## 🆕 Atualizações recentes
+
+- Histórico agrupado por dia, com título, horário e prévia de cada conversa.
+- Handles laterais (☰ e 🧠) reabrem histórico e painel de raciocínio sem reduzir a área do chat.
+- README e menu unificado revisados para refletir o fluxo atual da Web UI.
+
 ## 🚀 Primeiros passos
 
 ### Pré-requisitos
@@ -72,9 +78,9 @@ A interface é dividida em três áreas principais:
 
 | Zona | Descrição |
 | --- | --- |
-| **Histórico** (coluna esquerda) | Lista conversas recentes. Pode ser ocultada/mostrada pelo botão ☰ na barra superior. |
+| **Histórico** (coluna esquerda) | Conversas agrupadas por dia (Hoje, Ontem, dias da semana, etc.), com título, prévia e horário. Pode ser ocultado pelo botão ☰ e reaberto pelo handle lateral quando recolhido. |
 | **Chat** (centro) | Mostra a conversa com a Lori. Inclui área de anexos, campo de mensagem com envio `Enter`, indicador de digitação e o contador de arquivos de contexto. |
-| **Raciocínio do agente** (coluna direita) | Exibe pensamentos, chamadas de ferramenta e confirmações. Pode ser recolhido pelo botão 🧠 ou pelo handle flutuante que aparece quando fechado. |
+| **Raciocínio do agente** (coluna direita) | Exibe pensamentos, chamadas de ferramenta e confirmações. Pode ser recolhido pelo botão 🧠 e reaberto pelo handle com ícone de cérebro na lateral direita. |
 
 ### Arquivos de contexto
 
@@ -86,6 +92,12 @@ A interface é dividida em três áreas principais:
 
 - Alternância de tema claro/escuro pela opção ◑ na barra superior.
 - Histórico e painel do agente lembram o estado (aberto/fechado) entre sessões via `localStorage`.
+- Handles laterais (☰ e 🧠) facilitam reabrir os painéis sem tomar espaço do chat.
+
+### Evoluções planejadas
+
+- Automação para reconhecer pedidos de atualização (ex.: "atualize o preço do BTC") e refazer consultas relevantes automaticamente.
+- Aperfeiçoar heurísticas para aprender preferências por conversa utilizando o histórico agrupado.
 
 ---
 
@@ -94,16 +106,31 @@ A interface é dividida em três áreas principais:
 ```
 assistant-cli/
 ├── assistant_cli/          # Núcleo do agente e ferramentas
-│   ├── cli.py              # Entrada do CLI
+│   ├── __init__.py         # Inicializador do módulo
 │   ├── agent.py            # Loop principal do agente
-│   ├── tools.py            # Registro de ferramentas/bindings
-│   └── config.py           # Variáveis de ambiente e diretórios padrão
+│   ├── cli.py              # Entrada do CLI
+│   ├── config.py           # Variáveis de ambiente e diretórios padrão
+│   ├── heuristic_processor.py # Processador de heurísticas
+│   ├── ollama_client.py    # Cliente para o Ollama
+│   ├── test_agent.py       # Testes para o agente
+│   ├── test_tools.py       # Testes para as ferramentas
+│   ├── tools_cli.py        # Ferramentas de linha de comando
+│   └── tools.py            # Registro de ferramentas/bindings
 ├── web/                    # Backend FastAPI (serviços REST/WebSocket)
 │   ├── main.py             # Aplicação FastAPI e rotas
 │   └── static/             # Front-end (index.html, style.css, app.js)
+├── scripts/                # Scripts de automação
+│   ├── bootstrap.sh        # Script de inicialização
+│   ├── run_lori_tests.sh   # Script para rodar testes da Lori
+│   ├── run_tests.sh        # Script para rodar testes
+│   ├── smoke.sh            # Script para testes de fumaça
+│   └── test_tools.sh       # Script para testar ferramentas
 ├── run.sh                  # Inicializador do CLI
 ├── run_web.sh              # Inicializador da interface web
+├── start.sh                # Menu unificado com bootstrapping
+├── lori-logs.sh            # Script para visualizar logs
 ├── requirements.txt        # Dependências Python
+├── setup.py                # Script de setup do projeto
 └── config.ini.template     # Template opcional de configuração
 ```
 
