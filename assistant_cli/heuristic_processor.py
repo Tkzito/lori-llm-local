@@ -266,6 +266,11 @@ class HeuristicProcessor:
             search_args = prepare_search_query(p, query, 3)
 
             tool_calls: list[dict[str, Any]] = []
+            if len(assets) == 1 and assets[0] in {"bitcoin", "btc"}:
+                tool_calls.append({
+                    "tool": "crypto.multi_price",
+                    "args": {"asset": assets[0]},
+                })
             for asset_name in assets:
                 tool_calls.append({
                     "tool": "crypto.price",
@@ -316,9 +321,12 @@ class HeuristicProcessor:
 
             calls: list[dict] = []
             if self.agent._last_asset:
+                last_asset = self.agent._last_asset
+                if last_asset in {"bitcoin", "btc"}:
+                    calls.append({"tool": "crypto.multi_price", "args": {"asset": last_asset}})
                 calls.append({
                     "tool": "crypto.price",
-                    "args": {"asset": self.agent._last_asset, "vs_currencies": list(self.agent._last_price_vs)},
+                    "args": {"asset": last_asset, "vs_currencies": list(self.agent._last_price_vs)},
                 })
             if getattr(self.agent, "_last_fx_request", None):
                 calls.append({
