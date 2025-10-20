@@ -1,4 +1,5 @@
 import os
+import tempfile
 from pathlib import Path
 from datetime import datetime
 
@@ -26,7 +27,8 @@ OLLAMA_BASE_URL = env_str("OLLAMA_BASE_URL", "http://localhost:11434")
 ASSISTANT_MODEL = env_str("ASSISTANT_MODEL", "mistral")
 
 # Root restriction for all fs ops
-LORI_HOME = Path(env_str("LORI_HOME", str(HOME / "lori"))).resolve()
+DEFAULT_LORI_HOME = Path(tempfile.gettempdir()) / "lori"
+LORI_HOME = Path(env_str("LORI_HOME", str(DEFAULT_LORI_HOME))).expanduser().resolve()
 LORI_HOME.mkdir(parents=True, exist_ok=True)
 
 WORKSPACE_DIR = LORI_HOME / "workspace"

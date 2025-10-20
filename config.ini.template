@@ -4,7 +4,7 @@ model = mistral
 # URL base do Ollama
 base_url = http://localhost:11434
 # Diretório raiz para operações de arquivo
-root_dir = ~/lori
+root_dir = /tmp/lori
 # Habilitar logs detalhados de ferramentas
 verbose = false
 

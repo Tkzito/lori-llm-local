@@ -84,7 +84,7 @@ A interface é dividida em três áreas principais:
 
 ### Arquivos de contexto
 
-- Adicione arquivos pelo botão 📎. Os arquivos são armazenados em `~/lori/uploads` (padrão).
+- Adicione arquivos pelo botão 📎. Os arquivos são armazenados em `$(LORI_HOME)/uploads` (padrão: `/tmp/lori/uploads` em sistemas Unix-like).
 - Cada arquivo aparece com nome, tamanho, ícone e botão **Remover**. Enquanto o backend processa o pedido o item exibe um spinner.
 - O botão **Limpar** remove todos os arquivos carregados. O contador abaixo do título indica quantos arquivos estão ativos.
 
@@ -144,8 +144,8 @@ As principais variáveis de ambiente aceitas estão em `assistant_cli/config.py`
 | --- | --- | --- |
 | `ASSISTANT_MODEL` | Modelo a ser usado no Ollama | `mistral` |
 | `OLLAMA_BASE_URL` | Endpoint do Ollama | `http://localhost:11434` |
-| `LORI_HOME` | Diretório base para workspace/cache/uploads | `~/lori` |
-| `ASSISTANT_ROOT` | Raiz permitida para operações de arquivo | `~/lori/workspace` |
+| `LORI_HOME` | Diretório base para workspace/cache/uploads | `/tmp/lori` (via `tempfile.gettempdir()`) |
+| `ASSISTANT_ROOT` | Raiz permitida para operações de arquivo | `/tmp/lori/workspace` |
 | `ASSISTANT_VERBOSE` | Habilita logs de ferramentas no agente | `0` |
 | `OLLAMA_USE_GPU` | Define se o Ollama deve usar GPU (`1`) | auto |
 
@@ -160,7 +160,7 @@ Para customizar permanentemente, você pode criar um `.env` (carregado manualmen
 - **Testes:** `pytest`
 - **Lint:** `ruff check .`
 - Os arquivos do front ficam em `web/static/`. Após alterar CSS ou JS basta recarregar a página; o backend roda com `--reload`.
-- Anexos enviados pela interface são salvos em `~/lori/uploads`. Limpe manualmente se necessário.
+- Anexos enviados pela interface são salvos em `$(LORI_HOME)/uploads` (por padrão, `/tmp/lori/uploads`). Limpe manualmente se necessário.
 
 ---
 
