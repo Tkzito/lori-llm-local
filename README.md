@@ -1,179 +1,223 @@
 # Lori LLM Local
 
-Lori é uma assistente local para linha de comando e navegador construída sobre modelos servidos pelo Ollama. O projeto oferece:
-
-- **Backend FastAPI** com WebSocket para streaming de respostas do agente.
-- **Interface web reativa** com histórico, painel de raciocínio, upload de arquivos de contexto e modo claro/escuro.
-- **Ferramentas modulares** acessíveis via `assistant_cli.tools.*`, reaproveitadas tanto pelo web app quanto pelo CLI.
+Assistente local orientada a desenvolvedores que desejam integrar modelos servidos pelo Ollama em fluxos de terminal ou navegador, mantendo dados sob controle. O repositório consolida o agente Python, a interface web, scripts de automação e orientações de operação.
 
 ---
 
-## 🆕 Atualizações recentes
+## Visão Geral
 
-- Histórico agrupado por dia, com título, horário e prévia de cada conversa.
-- Handles laterais (☰ e 🧠) reabrem histórico e painel de raciocínio sem reduzir a área do chat.
-- README e menu unificado revisados para refletir o fluxo atual da Web UI.
+- Backend FastAPI com WebSocket para streaming de respostas.
+- Interface web reativa com histórico, painel de raciocínio e anexos.
+- CLI completa com REPL, histórico local e suporte a streaming.
+- Ferramentas modulares em `assistant_cli.tools` reutilizadas entre CLI e Web.
+- Scripts de automação para bootstrap, execução de testes, smoke tests e coleta de logs.
 
-## 🚀 Primeiros passos
+---
 
-### Pré-requisitos
+## Arquitetura
 
-- Python 3.10 ou superior.
-- Ollama instalado e executando (padrão em `http://localhost:11434`).
-- Recomendado: modelos como `mistral` importados no Ollama (`ollama run mistral`).
+| Componente | Responsabilidade |
+| --- | --- |
+| `assistant_cli/agent.py` | Loop central do agente, orquestra ferramentas e chamadas ao LLM. |
+| `assistant_cli/tools.py` | Operações de arquivos, web scraping, consultas financeiras e utilidades. |
+| `assistant_cli/config.py` | Configuração de diretórios, sandbox, variáveis e limites de segurança. |
+| `web/main.py` | API FastAPI e servidor do front-end. |
+| `start.sh` | Menu interativo que inicializa CLI, Web UI e Ollama. |
+| `run.sh` / `run_web.sh` | Execução direta do CLI ou da Web UI. |
+| `scripts/*.sh` | Bootstrap de dependências, testes e diagnósticos. |
 
-### Menu unificado
+Todo acesso a arquivos respeita `ASSISTANT_ROOT`, negando rotas presentes na denylist ou fora do workspace configurado.
 
-Utilize o menu principal para escolher como interagir com a Lori:
+---
+
+## Pré-requisitos
+
+1. Python 3.10 ou superior.  
+2. Ollama instalado e executando em `http://localhost:11434`.  
+3. Modelos disponíveis no Ollama (ex.: `ollama pull mistral`).  
+4. Dependências opcionais para funcionalidades específicas:  
+   - Automação web: `pip install playwright` e `playwright install`.  
+   - Consultas SQL sobre CSV: `pip install pandas pandasql`.  
+   - Parsing HTML fallback: `pip install beautifulsoup4`.  
+   - Buscas web: `pip install duckduckgo-search`.  
+
+Instalação típica:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate            # Linux/macOS (bash/zsh)
+.\.venv\Scripts\Activate.ps1    # Windows PowerShell
+.\.venv\Scripts\activate.bat    # Windows CMD
+pip install -r requirements.txt
+```
+
+---
+
+## Configuração
+
+### Diretórios de trabalho
+
+- `LORI_HOME` padrão: `/tmp/lori` (derivado de `tempfile.gettempdir()`).
+- Estrutura criada automaticamente:
+  - `workspace/` – arquivos do usuário e `lori-notas.txt`.
+  - `cache/` – artefatos temporários das ferramentas.
+  - `uploads/` – anexos recebidos pela Web UI.
+- Sobrescreva com `LORI_HOME=/caminho/customizado` ou edite `config.ini`.
+
+### Variáveis principais
+
+| Variável | Descrição | Padrão |
+| --- | --- | --- |
+| `ASSISTANT_MODEL` | Modelo usado no Ollama | `mistral` |
+| `OLLAMA_BASE_URL` | Endpoint do Ollama | `http://localhost:11434` |
+| `LORI_HOME` | Raiz para workspace/cache/uploads | `/tmp/lori` |
+| `ASSISTANT_ROOT` | Diretório permitido para operações de arquivo | `/tmp/lori/workspace` |
+| `ASSISTANT_VERBOSE` | Exibe chamadas de ferramenta no terminal | `0` |
+| `ASSISTANT_GLOBAL_READ` | Habilita leitura global (exceto denylist) | `0` |
+| `ASSISTANT_GLOBAL_WRITE` | Habilita escrita global | `0` |
+| `ASSISTANT_TIMEOUT_SECS` | Timeout padrão de ferramentas | `60` |
+
+### Template `config.ini`
+
+Crie uma configuração persistente copiando o template:
+
+```bash
+cp config.ini.template config.ini
+```
+
+Campos principais:
+
+```
+[assistant]
+model = mistral
+base_url = http://localhost:11434
+root_dir = /tmp/lori
+verbose = false
+```
+
+---
+
+## Fluxos de Uso
+
+### Menu unificado (`start.sh`)
 
 ```bash
 ./start.sh
 ```
 
-O script cuida de:
+Recursos do menu:
 
-1. Iniciar Lori no terminal (CLI)
-2. Iniciar Lori no navegador (Web UI)
-3. Verificar/iniciar o serviço Ollama
-4. Encerrar o Ollama
-5. Iniciar tudo (Ollama + Web UI em segundo plano)
-6. Encerrar tudo (Web UI + Ollama)
-7. Visualizar logs (Ollama, Web UI ou ambos)
+- Inicializa CLI interativa ou Web UI.
+- Verifica e, se necessário, inicia o Ollama.
+- Inicia Web UI em segundo plano com logging gerenciado.
+- Encerra serviços e exibe logs (`.lori_web.log`, `.lori_ollama.log`).
 
-O menu mostra o status atual de cada componente e mantém a Web UI sempre em `http://127.0.0.1:8001/`. Quando iniciada em segundo plano, os logs ficam em `.lori_web.log` e o PID em `.lori_web.pid`.
+O script garante que `.venv` exista, instala dependências e valida conectividade com o Ollama antes de executar componentes.
 
-A cada ação, o script garante que o virtualenv `.venv` exista, instala dependências de `requirements.txt` quando necessário e verifica se o Ollama responde (perguntando se deve inicializá-lo caso esteja parado).
-
-### Ver logs em tempo real
-
-Utilize o script auxiliar `lori-logs.sh` para acompanhar os logs capturados pelo menu:
+### CLI
 
 ```bash
-# Log do Ollama
+./run.sh                   # inicia REPL
+./run.sh --history         # mostra histórico recente
+./run.sh "pergunta única"  # modo one-shot
+```
+
+### Web UI
+
+```bash
+./run_web.sh --port 8001
+```
+
+Interface disponível em `http://127.0.0.1:8001`. Destaques:
+
+- Histórico agrupado por dia com título e prévia.
+- Painel de raciocínio exibindo chamadas de ferramenta.
+- Upload de anexos persistidos em `$(LORI_HOME)/uploads`.
+- Alternância de tema e handles laterais para abrir/fechar painéis.
+
+### Logs
+
+```bash
 ./lori-logs.sh ollama
-
-# Log da Web UI em background
 ./lori-logs.sh web
-
-# Ambos os logs em uma única saída
 ./lori-logs.sh ambos
 ```
 
-Os arquivos correspondentes são `.lori_ollama.log` e `.lori_web.log`; os PIDs ficam registrados em `.lori_ollama.pid` e `.lori_web.pid`.
+Os scripts leem os artefatos gerados pelo menu, úteis para diagnosticar sessões de longo prazo.
 
-### Execução direta (opcional)
+---
 
-Se preferir chamar os modos manualmente, os scripts originais continuam disponíveis:
+## Interface Web
+
+A UI é dividida em três colunas principais (Histórico, Chat, Raciocínio). Cada painel pode ser recolhido via handles laterais; estados de exibição são persistidos em `localStorage`. O upload suporta múltiplos arquivos com remoção individual e limpeza geral.
+
+---
+
+## Desenvolvimento
+
+### Testes e qualidade
 
 ```bash
-./run.sh       # CLI
-./run_web.sh   # interface web
+pytest
+ruff check .
 ```
+
+Use `scripts/run_tests.sh` para rodar testes automatizados e `scripts/smoke.sh` para verificações rápidas. Ajuste a suíte conforme adicionar ferramentas ou integrações.
+
+### Estrutura do código
+
+- `assistant_cli/tools.py` registra ferramentas consumidas pelo agente; cada função recebe um `dict` e retorna dados serializáveis.
+- `assistant_cli/tools_cli.py` oferece linha de comando para testar ferramentas isoladamente.
+- `assistant_cli/heuristic_processor.py` concentra heurísticas aplicadas às respostas.
+- `src/` replica o pacote para instalação (`pip install .`).
+
+### Adicionando ferramentas
+
+1. Implemente a função em `assistant_cli/tools.py`.
+2. Registre a função no dicionário `TOOLS`.
+3. Documente argumentos e retorno no docstring.
+4. Adicione testes em `assistant_cli/test_tools.py`.
+
+### Integração com Ollama
+
+- Certifique-se de que `ollama serve` esteja ativo antes de iniciar CLI ou Web UI.
+- Baixe modelos necessários (`ollama pull <modelo>`).
+- Para GPU, exporte `OLLAMA_USE_GPU=1` ou configure `~/.ollama/config`.
 
 ---
 
-## 🖥️ Visão geral da interface web
+## Administração
 
-A interface é dividida em três áreas principais:
-
-| Zona | Descrição |
-| --- | --- |
-| **Histórico** (coluna esquerda) | Conversas agrupadas por dia (Hoje, Ontem, dias da semana, etc.), com título, prévia e horário. Pode ser ocultado pelo botão ☰ e reaberto pelo handle lateral quando recolhido. |
-| **Chat** (centro) | Mostra a conversa com a Lori. Inclui área de anexos, campo de mensagem com envio `Enter`, indicador de digitação e o contador de arquivos de contexto. |
-| **Raciocínio do agente** (coluna direita) | Exibe pensamentos, chamadas de ferramenta e confirmações. Pode ser recolhido pelo botão 🧠 e reaberto pelo handle com ícone de cérebro na lateral direita. |
-
-### Arquivos de contexto
-
-- Adicione arquivos pelo botão 📎. Os arquivos são armazenados em `$(LORI_HOME)/uploads` (padrão: `/tmp/lori/uploads` em sistemas Unix-like).
-- Cada arquivo aparece com nome, tamanho, ícone e botão **Remover**. Enquanto o backend processa o pedido o item exibe um spinner.
-- O botão **Limpar** remove todos os arquivos carregados. O contador abaixo do título indica quantos arquivos estão ativos.
-
-### Outros recursos úteis
-
-- Alternância de tema claro/escuro pela opção ◑ na barra superior.
-- Histórico e painel do agente lembram o estado (aberto/fechado) entre sessões via `localStorage`.
-- Handles laterais (☰ e 🧠) facilitam reabrir os painéis sem tomar espaço do chat.
-
-### Evoluções planejadas
-
-- Automação para reconhecer pedidos de atualização (ex.: "atualize o preço do BTC") e refazer consultas relevantes automaticamente.
-- Aperfeiçoar heurísticas para aprender preferências por conversa utilizando o histórico agrupado.
+- **Limpeza de temporários**: `/tmp/lori` é volátil; redirecione `LORI_HOME` se precisar preservar dados entre reinicializações.
+- **Backups**: mantenha `config.ini` e scripts customizados versionados no Git.
+- **Dependências**: após atualizar `requirements.txt`, rode `pip install -r requirements.txt` dentro da `.venv`.
+- **Logs antigos**: remova `.lori_*.log` e `.lori_*.pid` ao encerrar sessões prolongadas.
+- **Homologação**: utilize `scripts/run_lori_tests.sh` antes de releases para validar integrações principais.
 
 ---
 
-## 📁 Estrutura do projeto
+## Solução de Problemas
 
-```
-assistant-cli/
-├── assistant_cli/          # Núcleo do agente e ferramentas
-│   ├── __init__.py         # Inicializador do módulo
-│   ├── agent.py            # Loop principal do agente
-│   ├── cli.py              # Entrada do CLI
-│   ├── config.py           # Variáveis de ambiente e diretórios padrão
-│   ├── heuristic_processor.py # Processador de heurísticas
-│   ├── ollama_client.py    # Cliente para o Ollama
-│   ├── test_agent.py       # Testes para o agente
-│   ├── test_tools.py       # Testes para as ferramentas
-│   ├── tools_cli.py        # Ferramentas de linha de comando
-│   └── tools.py            # Registro de ferramentas/bindings
-├── web/                    # Backend FastAPI (serviços REST/WebSocket)
-│   ├── main.py             # Aplicação FastAPI e rotas
-│   └── static/             # Front-end (index.html, style.css, app.js)
-├── scripts/                # Scripts de automação
-│   ├── bootstrap.sh        # Script de inicialização
-│   ├── run_lori_tests.sh   # Script para rodar testes da Lori
-│   ├── run_tests.sh        # Script para rodar testes
-│   ├── smoke.sh            # Script para testes de fumaça
-│   └── test_tools.sh       # Script para testar ferramentas
-├── run.sh                  # Inicializador do CLI
-├── run_web.sh              # Inicializador da interface web
-├── start.sh                # Menu unificado com bootstrapping
-├── lori-logs.sh            # Script para visualizar logs
-├── requirements.txt        # Dependências Python
-├── setup.py                # Script de setup do projeto
-└── config.ini.template     # Template opcional de configuração
-```
-
----
-
-## ⚙️ Configuração
-
-As principais variáveis de ambiente aceitas estão em `assistant_cli/config.py`. Algumas relevantes:
-
-| Variável | Descrição | Padrão |
+| Sintoma | Diagnóstico provável | Sugestão |
 | --- | --- | --- |
-| `ASSISTANT_MODEL` | Modelo a ser usado no Ollama | `mistral` |
-| `OLLAMA_BASE_URL` | Endpoint do Ollama | `http://localhost:11434` |
-| `LORI_HOME` | Diretório base para workspace/cache/uploads | `/tmp/lori` (via `tempfile.gettempdir()`) |
-| `ASSISTANT_ROOT` | Raiz permitida para operações de arquivo | `/tmp/lori/workspace` |
-| `ASSISTANT_VERBOSE` | Habilita logs de ferramentas no agente | `0` |
-| `OLLAMA_USE_GPU` | Define se o Ollama deve usar GPU (`1`) | auto |
-
-Para customizar permanentemente, você pode criar um `.env` (carregado manualmente) ou exportar as variáveis antes de rodar os scripts.
-
-> **Dica GPU**: assegure-se de instalar a versão do Ollama com suporte CUDA, exporte `OLLAMA_USE_GPU=1` (ou configure `~/.ollama/config`) e baixe o modelo desejado (`ollama pull mistral`) antes de iniciar o menu.
+| CLI informa ausência de histórico | Arquivo `history-*.jsonl` não criado | Execute uma sessão ou verifique permissões em `~/.local/share/assistant_cli`. |
+| Web UI não responde | Porta ocupada ou serviço parado | Consulte `./lori-logs.sh web` e reinicie via `./start.sh`. |
+| Ferramenta de scraping falha | `playwright` ou browser não instalado | Instale `playwright` e execute `playwright install`. |
+| Acesso negado a arquivo | Sandbox bloqueou caminho | Ajuste `ASSISTANT_ROOT`, `ASSISTANT_READONLY_DIRS` ou exporte `ASSISTANT_GLOBAL_READ=1`. |
+| Resposta vazia do modelo | Modelo não carregado no Ollama | Cheque `ollama list`, carregue o modelo e reinicie o serviço. |
 
 ---
 
-## 🧪 Desenvolvimento e testes
+## Contribuição
 
-- **Testes:** `pytest`
-- **Lint:** `ruff check .`
-- Os arquivos do front ficam em `web/static/`. Após alterar CSS ou JS basta recarregar a página; o backend roda com `--reload`.
-- Anexos enviados pela interface são salvos em `$(LORI_HOME)/uploads` (por padrão, `/tmp/lori/uploads`). Limpe manualmente se necessário.
+Relate issues ou proponha mudanças via pull requests. Antes de enviar:
 
----
-
-## 🛠️ Solução de problemas
-
-| Sintoma | Como resolver |
-| --- | --- |
-| Modelo não responde | Verifique se o Ollama está em execução e se o modelo foi baixado (`ollama list`). |
-| Não consigo remover arquivo de contexto | Confirme se o item aparece com spinner; se a operação falhar o aviso embaixo do cabeçalho trará o motivo. |
-| Portas ocupadas | Ajuste `run_web.sh` passando `--port` para outro valor (`./run_web.sh --port 9000`). |
+- Atualize a documentação se a funcionalidade pública mudar.
+- Garanta que testes (`pytest`) e lint (`ruff`) executem sem falhas.
+- Inclua exemplos de uso ou notas de migração quando necessário.
 
 ---
 
-## 📄 Licença
+## Licença
 
-Este projeto é distribuído nos termos definidos pelo autor. Consulte o repositório original para mais detalhes sobre uso e contribuições.
+Distribuído conforme termos definidos pelo autor. Consulte o repositório original para detalhes sobre uso, distribuição e contribuições.
