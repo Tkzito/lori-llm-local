@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from assistant_cli.tools import _ddg_html_search
-from assistant_cli.tools import tool_crypto_price
+from assistant_cli.tools import tool_crypto_multi_price, tool_crypto_price
 from assistant_cli.tools import tool_fx_rate
 from assistant_cli.tools import tool_web_get_many
 
@@ -122,6 +122,53 @@ class TestTools(unittest.TestCase):
         result = tool_crypto_price({"asset": "moeda-inexistente"})
         self.assertFalse(result["ok"])
         self.assertEqual(result["error"], "asset_desconhecido")
+
+    @patch("assistant_cli.tools.requests.get")
+    def test_crypto_multi_price_success(self, mock_get: MagicMock):
+        responses = []
+
+        # CoinGecko
+        resp1 = MagicMock()
+        resp1.raise_for_status.return_value = None
+        resp1.json.return_value = {"bitcoin": {"usd": 65000.0, "last_updated_at": 1_700_000_000}}
+        responses.append(resp1)
+
+        # Coinbase
+        resp2 = MagicMock()
+        resp2.raise_for_status.return_value = None
+        resp2.json.return_value = {"data": {"amount": "65010.23"}}
+        responses.append(resp2)
+
+        # Binance
+        resp3 = MagicMock()
+        resp3.raise_for_status.return_value = None
+        resp3.json.return_value = {"price": "65005.00"}
+        responses.append(resp3)
+
+        # Kraken
+        resp4 = MagicMock()
+        resp4.raise_for_status.return_value = None
+        resp4.json.return_value = {"error": [], "result": {"XXBTZUSD": {"c": ["64995.10", "1.0"]}}}
+        responses.append(resp4)
+
+        # Bitstamp
+        resp5 = MagicMock()
+        resp5.raise_for_status.return_value = None
+        resp5.json.return_value = {"last": "64990.00", "timestamp": "1700000010"}
+        responses.append(resp5)
+
+        mock_get.side_effect = responses
+
+        result = tool_crypto_multi_price({"asset": "btc"})
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["asset"], "BTC")
+        self.assertEqual(len(result["sources"]), 5)
+        self.assertIn("Coinbase", result["table"])
+        self.assertEqual(mock_get.call_count, 5)
+
+        prices = [row["price"] for row in result["sources"]]
+        self.assertTrue(all(isinstance(price, float) for price in prices))
 
     @patch("assistant_cli.tools.requests.get")
     def test_fx_rate_success(self, mock_get: MagicMock):

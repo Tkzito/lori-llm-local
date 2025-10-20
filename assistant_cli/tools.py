@@ -141,6 +141,36 @@ class ToolSpec:
     func: Callable[[Dict[str, Any]], Any]
 
 
+def _now_utc_iso() -> str:
+    """Retorna o horário atual em UTC no formato ISO-8601."""
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _timestamp_to_iso(ts: Any) -> Optional[str]:
+    """Converte timestamps (segundos) para ISO-8601 em UTC."""
+    try:
+        ts_float = float(ts)
+    except (TypeError, ValueError):
+        return None
+    if ts_float <= 0:
+        return None
+    try:
+        dt_utc = datetime.fromtimestamp(ts_float, tz=timezone.utc)
+        return dt_utc.isoformat().replace("+00:00", "Z")
+    except Exception:
+        return None
+
+
+def _safe_float(value: Any) -> Optional[float]:
+    """Tenta converter um valor em float."""
+    if value is None:
+        return None
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
 def tool_fs_read(args: Dict[str, Any]) -> Dict[str, Any]:
     path = args.get("path")
     max_bytes = int(args.get("max_bytes", MAX_READ_BYTES))
@@ -652,6 +682,127 @@ def tool_crypto_price(args: Dict[str, Any]) -> Dict[str, Any]:
         "last_updated_iso": last_updated_iso,
         "last_updated_hours_ago": hours_diff,
         "source": "https://www.coingecko.com",
+    }
+
+
+def tool_crypto_multi_price(args: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Busca o preço do Bitcoin (USD) em múltiplas fontes públicas e retorna uma tabela.
+    """
+    asset_raw = args.get("asset") or "btc"
+    asset = str(asset_raw).strip().lower()
+    aliases = {"btc", "bitcoin"}
+    if asset not in aliases:
+        return {"ok": False, "error": "asset_nao_suportado"}
+
+    coingecko_id = "bitcoin"
+    rows: List[Dict[str, Any]] = []
+    errors: List[Dict[str, Any]] = []
+
+    def _register(source: str, url: str, price: Optional[float], iso: Optional[str]):
+        if price is None:
+            errors.append({"source": source, "error": "preco_indisponivel"})
+            return
+        rows.append(
+            {
+                "source": source,
+                "price": price,
+                "currency": "USD",
+                "retrieved_at": iso or _now_utc_iso(),
+                "url": url,
+            }
+        )
+
+    def _fetch_coingecko():
+        url = "https://api.coingecko.com/api/v3/simple/price"
+        params = {
+            "ids": coingecko_id,
+            "vs_currencies": "usd",
+            "include_last_updated_at": "true",
+        }
+        resp = requests.get(url, params=params, timeout=TIMEOUT_SECS)
+        resp.raise_for_status()
+        data = resp.json()
+        payload = data.get(coingecko_id, {})
+        price = _safe_float(payload.get("usd"))
+        iso = _timestamp_to_iso(payload.get("last_updated_at"))
+        _register("CoinGecko", "https://www.coingecko.com", price, iso)
+
+    def _fetch_coinbase():
+        url = "https://api.coinbase.com/v2/prices/BTC-USD/spot"
+        resp = requests.get(url, timeout=TIMEOUT_SECS)
+        resp.raise_for_status()
+        data = resp.json().get("data", {})
+        price = _safe_float(data.get("amount"))
+        _register("Coinbase", url, price, _now_utc_iso())
+
+    def _fetch_binance():
+        url = "https://api.binance.com/api/v3/ticker/price"
+        params = {"symbol": "BTCUSDT"}
+        resp = requests.get(url, params=params, timeout=TIMEOUT_SECS)
+        resp.raise_for_status()
+        data = resp.json()
+        price = _safe_float(data.get("price"))
+        _register("Binance", f"{url}?symbol=BTCUSDT", price, _now_utc_iso())
+
+    def _fetch_kraken():
+        url = "https://api.kraken.com/0/public/Ticker"
+        params = {"pair": "XBTUSD"}
+        resp = requests.get(url, params=params, timeout=TIMEOUT_SECS)
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("error"):
+            raise RuntimeError(";".join(data.get("error", [])))
+        result = data.get("result") or {}
+        payload = next(iter(result.values()), {})
+        last_trade = payload.get("c") or []
+        price = _safe_float(last_trade[0] if last_trade else None)
+        _register("Kraken", f"{url}?pair=XBTUSD", price, _now_utc_iso())
+
+    def _fetch_bitstamp():
+        url = "https://www.bitstamp.net/api/v2/ticker/btcusd/"
+        resp = requests.get(url, timeout=TIMEOUT_SECS)
+        resp.raise_for_status()
+        data = resp.json()
+        price = _safe_float(data.get("last"))
+        iso = _timestamp_to_iso(data.get("timestamp"))
+        _register("Bitstamp", url, price, iso)
+
+    fetchers = [
+        ("CoinGecko", _fetch_coingecko),
+        ("Coinbase", _fetch_coinbase),
+        ("Binance", _fetch_binance),
+        ("Kraken", _fetch_kraken),
+        ("Bitstamp", _fetch_bitstamp),
+    ]
+
+    for name, fetch in fetchers:
+        try:
+            fetch()
+        except Exception as exc:
+            errors.append({"source": name, "error": str(exc)})
+
+    if not rows:
+        return {"ok": False, "error": "nenhuma_fonte_disponivel", "errors": errors}
+
+    table_lines = [
+        "| Fonte | Preço (USD) | Atualizado em | URL |",
+        "| --- | ---: | --- | --- |",
+    ]
+    for row in rows:
+        price_formatted = f"${row['price']:,.2f}"
+        table_lines.append(
+            f"| {row['source']} | {price_formatted} | {row['retrieved_at']} | {row['url']} |"
+        )
+
+    return {
+        "ok": True,
+        "asset": "BTC",
+        "currency": "USD",
+        "sources": rows,
+        "table": "\n".join(table_lines),
+        "errors": errors,
+        "collected_at": _now_utc_iso(),
     }
 
 
@@ -1567,6 +1718,12 @@ def registry() -> Dict[str, ToolSpec]:
             description="Retorna preço de criptoativos via CoinGecko",
             params={"asset": "str", "vs_currencies": "list|str?"},
             func=tool_crypto_price,
+        ),
+        "crypto.multi_price": ToolSpec(
+            name="crypto.multi_price",
+            description="Retorna preço do Bitcoin em múltiplas fontes públicas",
+            params={"asset": "str?"},
+            func=tool_crypto_multi_price,
         ),
         "fx.rate": ToolSpec(
             name="fx.rate",
