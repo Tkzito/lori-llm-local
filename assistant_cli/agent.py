@@ -197,11 +197,20 @@ class Agent:
         retries = 0
         for i in range(12):
             model_response_iter = self.step(stream=True)
-            
+
+            if isinstance(model_response_iter, dict):
+                model_response_iter = [model_response_iter]
+            elif isinstance(model_response_iter, (str, bytes)):
+                content = model_response_iter.decode() if isinstance(model_response_iter, bytes) else model_response_iter
+                model_response_iter = [{"message": {"content": content}}]
+
             if is_stream_call:
                 raw_response = yield from self._process_and_forward_stream(model_response_iter, agent_mode)
             else:
-                raw_response = "".join(c.get("message", {}).get("content", "") for c in model_response_iter)
+                raw_response = "".join(
+                    (c.get("message", {}).get("content", "") if isinstance(c, dict) else "")
+                    for c in model_response_iter
+                )
 
             tool_call = extract_tool_call(raw_response)
 
@@ -306,7 +315,8 @@ class Agent:
                 
                 simplified_result = self._simplify_tool_result(name, result)
                 self.add_user(format_tool_result(simplified_result))
-                tool_success = True # Mark as success only after adding the result
+                tool_success = True  # Mark as success only after adding the result
+                expecting_tools = False
             else:
                 self.add_user(format_tool_result({"ok": True, "result": result}))
 
