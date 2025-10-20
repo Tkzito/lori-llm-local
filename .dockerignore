@@ -1,0 +1,16 @@
+.venv
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+.git
+.github
+.DS_Store
+*.log
+.idea/
+.vscode/
+docker-compose.override.yml

@@ -216,6 +216,48 @@ Relate issues ou proponha mudanças via pull requests. Antes de enviar:
 - Garanta que testes (`pytest`) e lint (`ruff`) executem sem falhas.
 - Inclua exemplos de uso ou notas de migração quando necessário.
 
+Consulte o [CONTRIBUTING.md](CONTRIBUTING.md) para o fluxo completo e expectativas de revisão.
+
+---
+
+## Docker
+
+`docker-compose.yml` define os serviços `ollama` (modelos) e `lori` (web/CLI). Um único comando sobe todo o ambiente com dados persistentes.
+
+### Build e execução
+
+```bash
+docker compose build
+docker compose up -d
+```
+
+- Web UI: `http://localhost:8001`
+- API do Ollama: `http://localhost:11434`
+
+Os volumes `lori_data` e `ollama_data` preservam workspace e modelos em `/data/lori` e `/root/.ollama`. O serviço do Ollama baixa automaticamente o modelo definido em `OLLAMA_DEFAULT_MODEL` (padrão: `mistral`) quando o stack sobe.
+
+### Variáveis úteis
+
+| Variável | Descrição | Padrão (docker-compose) |
+| --- | --- | --- |
+| `OLLAMA_BASE_URL` | Endpoint usado pelo agente para o modelo | `http://ollama:11434` |
+| `LORI_HOME` | Diretório raiz de dados da Lori | `/data/lori` |
+| `ASSISTANT_ROOT` | Workspace padrão | `/data/lori/workspace` |
+| `ASSISTANT_VERBOSE` | Verbose das ferramentas | `0` |
+
+### CLI dentro do container
+
+```bash
+docker compose run --rm lori python -m assistant_cli.cli --history
+docker compose run --rm lori python -m assistant_cli.cli "Olá, Lori!"
+```
+
+### GPU e ajustes
+
+- Para GPUs NVIDIA, adicione `--gpus=all` ao serviço `ollama` (ou a configuração equivalente no Compose).
+- Personalize portas/volumes direto em `docker-compose.yml`.
+- Utilize `docker compose logs -f` para acompanhar a saída dos serviços.
+
 ---
 
 ## Licença

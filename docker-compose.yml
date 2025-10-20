@@ -1,0 +1,54 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_DEFAULT_MODEL=${OLLAMA_DEFAULT_MODEL:-mistral}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        MODEL="${OLLAMA_DEFAULT_MODEL:-mistral}";
+        /bin/ollama serve &
+        PID=$!;
+        trap 'kill $$PID' TERM INT;
+        until ollama list >/dev/null 2>&1; do
+          echo '[ollama] aguardando servidor...';
+          sleep 2;
+        done;
+        if [ -n "$$MODEL" ] && ! ollama list | cut -d' ' -f1 | grep -q "^$$MODEL$"; then
+          echo "[ollama] pulling $$MODEL...";
+          ollama pull "$$MODEL";
+        fi;
+        wait $$PID
+
+  lori:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - LORI_HOME=/data/lori
+      - ASSISTANT_ROOT=/data/lori/workspace
+      - ASSISTANT_VERBOSE=${ASSISTANT_VERBOSE:-0}
+    volumes:
+      - lori_data:/data/lori
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  lori_data:
+  ollama_data:
