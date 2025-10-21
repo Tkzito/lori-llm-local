@@ -158,7 +158,7 @@ A UI é dividida em três colunas principais (Histórico, Chat, Raciocínio). Ca
 ### Testes e qualidade
 
 ```bash
-pytest
+pytest assistant_cli/test_tools.py
 ruff check .
 ```
 
