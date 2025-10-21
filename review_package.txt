@@ -1,0 +1,1130 @@
+--- Review Context ---
+Generated at (UTC): 2025-10-15T13:10:08Z
+Root directory: /home/silveira/workspace
+
+--- Project Structure ---
+/home/silveira/workspace
+├── app.js
+├── assistant-cli
+│   ├── assistant_cli
+│   │   ├── agent.py
+│   │   ├── cli.py
+│   │   ├── config.py
+│   │   ├── heuristic_processor.py
+│   │   ├── __init__.py
+│   │   ├── ollama_client.py
+│   │   ├── test_agent.py
+│   │   ├── test_tools.py
+│   │   ├── tools_cli.py
+│   │   └── tools.py
+│   ├── config.ini.template
+│   ├── .gitignore
+│   ├── lori-logs.sh
+│   ├── .lori_ollama.log
+│   ├── .lori_ollama.pid
+│   ├── .lori_web.log
+│   ├── .lori_web.pid
+│   ├── README.md
+│   ├── requirements.txt
+│   ├── run.sh
+│   ├── run_web.sh
+│   ├── scripts
+│   │   ├── bootstrap.sh
+│   │   ├── run_lori_tests.sh
+│   │   ├── run_tests.sh
+│   │   ├── smoke.sh
+│   │   └── test_tools.sh
+│   ├── setup.py
+│   ├── src
+│   │   ├── assistant_cli
+│   │   │   └── tools
+│   │   └── web
+│   ├── start.sh
+│   └── web
+│       ├── main.py
+│       ├── static
+│       │   ├── app.js
+│       │   ├── favicon.png
+│       │   ├── index.html
+│       │   └── style.css
+│       └── templates
+│           └── index.html
+├── assistant-cli-backup-20251007-1811.tar.gz
+├── assistant-cli-backup-20251008-104710.tar.gz
+├── assistant-cli-backup-20251010-201039.tar.gz
+├── assistant-cli-backup-20251010-201054.tar.gz
+├── assistant-cli-backup-with-web-access-20251007-1205.tar.gz
+├── assistant-tests
+│   ├── config.ini
+│   ├── notas.txt
+│   ├── README.md
+│   └── sample.txt
+├── config.ini.template
+├── .continue
+│   └── agents
+│       ├── lori-agent.yaml
+│       └── new-agent.yaml
+├── create_review_package.sh
+├── .gitignore
+├── IMPROVEMENTS.md
+├── README.md
+├── requirements.txt
+├── review_package.txt
+├── run.sh
+├── scripts
+│   ├── bootstrap.sh
+│   ├── run_lori_tests.sh
+│   ├── run_tests.sh
+│   ├── smoke.sh
+│   └── test_tools.sh
+└── style.css
+
+15 directories, 60 files
+
+--- File Contents ---
+--- File: .gitignore ---
+ # Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak
+venv.bak
+
+# VS Code
+.vscode/
+
+# Diretório de configuração da extensão Continue
+.continue/
+
+# Arquivos de backup
+*.tar.gz
+
+--- File: README.md ---
+# Lori LLM Local
+
+Este é o repositório principal do projeto Lori LLM Local. O projeto principal está localizado no diretório `assistant-cli`.
+
+Para mais informações, consulte o `README.md` dentro do diretório `assistant-cli`.
+
+[Clique aqui para acessar o projeto principal](./assistant-cli)
+--- File: app.js ---
+document.addEventListener("DOMContentLoaded", () => {
+  const messageInput = document.getElementById("message-input"); // Movido para o topo
+  const conversation = document.getElementById("conversation"); 
+  const historyContainer = document.getElementById("history"); 
+  const clearHistoryBtn = document.getElementById("clear-history-btn");
+  const newChatBtn = document.getElementById("new-chat-btn");
+  const uploadFileBtn = document.getElementById("upload-file-btn");
+  const fileInput = document.getElementById("file-input");
+  const contextFilesList = document.getElementById("context-files-list");
+  const toggleHistoryBtn = document.getElementById("toggle-history-btn");
+  const toggleAgentBtn = document.getElementById("toggle-agent-btn");
+  const agentLog = document.getElementById("agent-log");
+  const sendButton = document.getElementById("send-button");
+  let socket;
+
+  // 1) Auto-scroll sempre que adicionar conteúdo
+  const smartScroll = () => {
+    const el = document.getElementById("conversation");
+    el.scrollTop = el.scrollHeight;
+  };
+
+  // --- Carregar Histórico ---
+  const loadHistory = async () => {
+    try {
+      const response = await fetch("/history");
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+
+      if (data.error) {
+        console.error("Erro ao carregar histórico:", data.error);
+        historyContainer.innerHTML =
+          '<div class="history-entry"><em>Erro ao carregar o histórico.</em></div>';
+        return;
+      }
+
+      if (data.history && data.history.length > 0) {
+        historyContainer.innerHTML = ""; // Limpa a mensagem de "carregando"
+        data.history.forEach((entry) => {
+          const historyEntry = document.createElement("div");
+          historyEntry.className = "history-entry";
+          historyEntry.dataset.ts = entry.ts; // Armazena o ID da conversa
+
+          const titleDiv = document.createElement("div");
+          titleDiv.className = "history-title";
+          titleDiv.textContent = entry.title;
+
+          const dateDiv = document.createElement("div");
+          dateDiv.className = "history-date";
+          // Formata a data para ser mais amigável
+          const date = new Date(entry.ts);
+          dateDiv.textContent = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+
+          historyEntry.appendChild(titleDiv);
+          historyEntry.appendChild(dateDiv);
+          historyContainer.appendChild(historyEntry);
+
+          // Adiciona ícone de exclusão
+          const deleteIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          deleteIcon.setAttribute("class", "delete-icon");
+          deleteIcon.setAttribute("viewBox", "0 0 20 20");
+          deleteIcon.setAttribute("fill", "currentColor");
+          deleteIcon.innerHTML = `<path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />`;
+          historyEntry.appendChild(deleteIcon);
+          deleteIcon.addEventListener('click', (e) => {
+            e.stopPropagation(); // Impede que o clique carregue a conversa
+            deleteConversation(entry.ts, historyEntry);
+          });
+
+          // Adiciona o evento de clique
+          historyEntry.addEventListener("click", () => {
+            loadConversation(entry.ts);
+            document.querySelectorAll('.history-entry.active').forEach(el => el.classList.remove('active'));
+            historyEntry.classList.add('active');
+          });
+        });
+      } else {
+        historyContainer.innerHTML =
+          '<div class="history-entry"><em>Nenhum histórico encontrado.</em></div>';
+      }
+    } catch (error) {
+      console.error("Falha ao buscar histórico:", error);
+      historyContainer.innerHTML =
+        '<div class="history-entry"><em>Não foi possível carregar o histórico.</em></div>';
+    }
+  };
+
+  // --- Carregar Conversa Específica ---
+  const loadConversation = async (conversationId) => {
+    try {
+      const response = await fetch(`/history/${conversationId}`);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+
+      if (!data.ok || !data.messages) {
+        console.error("Erro ao carregar conversa:", data.error);
+        return;
+      }
+
+      // Limpa o painel de chat e preenche com a conversa carregada
+      conversation.innerHTML = "";
+      data.messages.forEach(msg => {
+        const messageWrapper = document.createElement("div");
+        messageWrapper.className = `message-wrapper ${msg.role}-wrapper`;
+
+        const avatar = document.createElement('div');
+        avatar.className = `avatar ${msg.role}-avatar`;
+        avatar.textContent = msg.role === 'user' ? 'V' : 'L';
+
+        const messageBubble = document.createElement("div");
+        messageBubble.className = `message ${msg.role}-message`;
+        
+        if (msg.role === 'assistant') {
+            const strong = document.createElement('strong');
+            strong.textContent = 'Lori';
+            messageBubble.appendChild(strong);
+        }
+        
+        // Renderiza o conteúdo como Markdown
+        const contentDiv = document.createElement("div");
+        contentDiv.innerHTML = marked.parse(msg.content);
+        messageBubble.appendChild(contentDiv);
+
+        if (msg.role === 'user') {
+            messageWrapper.appendChild(messageBubble);
+            messageWrapper.appendChild(avatar);
+        } else {
+            messageWrapper.appendChild(avatar);
+            messageWrapper.appendChild(messageBubble);
+        }
+
+        conversation.appendChild(messageWrapper);
+      });
+
+      // Aplica o realce de sintaxe nos blocos de código
+      enhanceCodeBlocks(conversation);
+      smartScroll();
+    } catch (error) {
+      console.error("Falha ao buscar conversa:", error);
+    }
+  }
+
+  // --- Excluir Conversas ---
+  const deleteConversation = async (conversationId, element) => {
+    if (!confirm("Tem certeza que deseja excluir esta conversa?")) return;
+    try {
+      const response = await fetch(`/history/${conversationId}`, { method: 'DELETE' });
+      const data = await response.json();
+      if (data.ok) {
+        element.remove();
+      } else {
+        alert("Erro ao excluir a conversa.");
+      }
+    } catch (error) {
+      console.error("Falha ao excluir conversa:", error);
+      alert("Erro de conexão ao tentar excluir.");
+    }
+  };
+
+  const deleteAllHistory = async () => {
+    if (!confirm("ATENÇÃO: Isso apagará TODO o seu histórico de conversas. Deseja continuar?")) return;
+    try {
+      const response = await fetch('/history', { method: 'DELETE' });
+      const data = await response.json();
+      if (data.ok) {
+        historyContainer.innerHTML = '<div class="history-entry"><em>Nenhum histórico encontrado.</em></div>';
+      } else {
+        alert("Erro ao limpar o histórico.");
+      }
+    } catch (error) {
+      console.error("Falha ao limpar histórico:", error);
+      alert("Erro de conexão ao tentar limpar o histórico.");
+    }
+  };
+
+  // --- Conexão WebSocket ---
+  const connectWebSocket = () => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    socket = new WebSocket(`${protocol}//${window.location.host}/ws/chat`);
+
+    socket.onmessage = (event) => {
+      handleSocketMessage(JSON.parse(event.data));
+    };
+
+    socket.onerror = (error) => {
+      console.error("WebSocket Error:", error);
+      addLogEntry("error", "Erro de conexão com o servidor.");
+    };
+  };
+  const sendMessage = () => {
+    const message = messageInput.value.trim();
+    if (!message) return;
+    const userMessageWrapper = document.createElement("div");
+    userMessageWrapper.className = "message-wrapper user-wrapper";
+
+    const userAvatar = document.createElement('div');
+    userAvatar.className = 'avatar user-avatar';
+    userAvatar.textContent = 'V';
+
+    const userMessageBubble = document.createElement("div");
+    userMessageBubble.className = "message user-message";
+    const userContentDiv = document.createElement("div");
+    userContentDiv.textContent = message;
+    userMessageBubble.appendChild(userContentDiv);
+
+    userMessageWrapper.appendChild(userMessageBubble);
+    userMessageWrapper.appendChild(userAvatar);
+
+    conversation.appendChild(userMessageWrapper);
+
+    messageInput.value = "";
+    messageInput.style.height = 'auto'; // Reseta a altura
+    sendButton.disabled = true;
+
+    const typingIndicator = addTypingIndicator();
+    smartScroll();
+
+    agentLog.innerHTML = ''; // Limpa o log do agente a cada novo envio
+    const currentHistory = [];
+    conversation.querySelectorAll('.message').forEach(div => {
+        const role = div.classList.contains('user-message') ? 'user' : 'assistant';
+        // Ignora o indicador de "digitando"
+        if (div.parentElement.classList.contains('typing-indicator')) return;
+
+        // Pega o texto do conteúdo, ignorando o 'Lori' em negrito
+        const content = div.querySelector('div')?.textContent || div.textContent;
+        if (content) currentHistory.push({ role, content });
+    });
+    currentHistory.pop(); // Remove a div vazia do assistente que acabamos de adicionar
+
+    const contextFiles = [];
+    contextFilesList.querySelectorAll('.context-file-entry').forEach(entry => {
+      contextFiles.push(entry.dataset.path);
+    });
+
+    socket.send(JSON.stringify({
+        message: message,
+        history: currentHistory,
+        agent_mode: true, // Modo agente agora é sempre ativo
+        context_files: contextFiles
+    }));
+  };
+
+  sendButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    sendMessage();
+  });
+
+  const addTypingIndicator = () => {
+    // Remove qualquer indicador anterior para evitar duplicatas
+    const existingIndicator = conversation.querySelector('.typing-indicator');
+    if (existingIndicator) existingIndicator.remove();
+
+    const indicatorWrapper = document.createElement('div');
+    indicatorWrapper.className = 'message-wrapper assistant-wrapper typing-indicator';
+    const indicatorBubble = document.createElement('div');
+    indicatorBubble.className = 'message assistant-message';
+    indicatorBubble.innerHTML = '<strong>Lori</strong><div class="dots"><span></span><span></span><span></span></div>';
+    indicatorWrapper.appendChild(indicatorBubble);
+    conversation.appendChild(indicatorWrapper);
+    smartScroll();
+    return indicatorWrapper;
+  };
+
+  const addLogEntry = (type, content) => {
+    const entry = document.createElement('div');
+    entry.className = `agent-log-entry ${type}`;
+    entry.textContent = content;
+    agentLog.appendChild(entry);
+    agentLog.scrollTop = agentLog.scrollHeight;
+  };
+
+  const addConfirmationPrompt = (data) => {
+    const entry = document.createElement('div');
+    entry.className = 'agent-log-entry confirmation-prompt';
+    
+    const text = document.createElement('div');
+    text.textContent = `⚠️ Ação requer permissão: ${data.reason || JSON.stringify(data.args)}`;
+    entry.appendChild(text);
+
+    const buttonContainer = document.createElement('div');
+    const allowBtn = document.createElement('button');
+    allowBtn.textContent = 'Permitir';
+    allowBtn.onclick = () => {
+      socket.send(JSON.stringify({ type: 'confirmation_response', approved: true }));
+      entry.remove();
+    };
+    const denyBtn = document.createElement('button');
+    denyBtn.textContent = 'Negar';
+    denyBtn.onclick = () => {
+      socket.send(JSON.stringify({ type: 'confirmation_response', approved: false }));
+      entry.remove();
+    };
+    buttonContainer.appendChild(allowBtn);
+    buttonContainer.appendChild(denyBtn);
+    entry.appendChild(buttonContainer);
+
+    agentLog.appendChild(entry);
+    agentLog.scrollTop = agentLog.scrollHeight;
+  };
+
+  const handleSocketMessage = (data) => {
+    const typingIndicator = conversation.querySelector('.typing-indicator');
+    let assistantWrapper = conversation.querySelector('.message-wrapper.assistant-wrapper:not(.typing-indicator):last-of-type');
+
+    // Se for o primeiro chunk de conteúdo, substitui o indicador de "digitando"
+    if (data.type === 'content' && typingIndicator && typingIndicator.parentNode) {
+        assistantWrapper = document.createElement("div");
+        assistantWrapper.className = "message-wrapper assistant-wrapper";
+        // Armazena o conteúdo completo em um atributo de dados para evitar re-parse
+        assistantWrapper.dataset.fullContent = "";
+
+        const assistantBubble = document.createElement("div");
+        assistantBubble.className = "message assistant-message";
+        assistantBubble.innerHTML = '<strong>Lori</strong><div></div>';
+        assistantWrapper.appendChild(assistantBubble);
+
+        conversation.insertBefore(assistantWrapper, typingIndicator);
+        typingIndicator.parentNode.removeChild(typingIndicator);
+    } else if (!assistantWrapper) { // Fallback se não houver mensagem do assistente
+        assistantWrapper = document.createElement("div");
+        assistantWrapper.className = "message-wrapper assistant-wrapper";
+        assistantWrapper.dataset.fullContent = "";
+        conversation.appendChild(assistantWrapper);
+    }
+
+    const contentDiv = assistantWrapper.querySelector('.message div');
+
+    switch (data.type) {
+        case 'thought':
+            addLogEntry('thought', `🤔 ${data.content}`);
+            break;
+        case 'tool_call':
+            addLogEntry('tool_call', `▶️ Usando ferramenta: ${data.data.name}(${JSON.stringify(data.data.args)})`);
+            break;
+        case 'tool_result':
+            addLogEntry('tool_result', `◀️ Resultado: ${JSON.stringify(data.data)}`);
+            break;
+        case 'confirm_required':
+            addConfirmationPrompt(data.data);
+            break;
+        case 'content':
+            // Acumula o conteúdo no atributo de dados e renderiza
+            assistantWrapper.dataset.fullContent += data.content;
+            contentDiv.innerHTML = marked.parse(assistantWrapper.dataset.fullContent);
+            enhanceCodeBlocks(assistantWrapper);
+            smartScroll();
+            break;
+        case 'error':
+            addLogEntry('error', `Error: ${data.content}`);
+            break;
+    }
+  };
+
+  const startNewChat = () => {
+    conversation.innerHTML = `
+      <div class="message-wrapper assistant-wrapper">
+        <div class="message assistant-message">
+            <strong>Lori</strong>
+            <div>Olá! Como posso ajudar hoje?</div>
+        </div>
+      </div>  
+    `;
+    document.querySelectorAll('.history-entry.active').forEach(el => el.classList.remove('active'));
+  };
+
+  newChatBtn.addEventListener('click', startNewChat);
+
+  // --- Lógica de Upload ---
+  uploadFileBtn.addEventListener('click', () => {
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', async (event) => {
+    const files = event.target.files;
+    if (files.length === 0) return;
+
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append("files", file);
+    }
+
+    try {
+      const response = await fetch('/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      const data = await response.json();
+      if (data.ok) {
+        data.files.forEach(addFileToContextList);
+      } else {
+        alert(`Erro no upload: ${data.error}`);
+      }
+    } catch (error) {
+      console.error("Falha no upload:", error);
+      alert("Erro de conexão durante o upload.");
+    }
+
+    // Limpa o input para permitir o upload do mesmo arquivo novamente
+    fileInput.value = '';
+  });
+
+  const addFileToContextList = (file) => {
+    const fileEntry = document.createElement('div');
+    fileEntry.className = 'context-file-entry';
+    fileEntry.dataset.path = file.path;
+    fileEntry.innerHTML = `
+      <span>${file.filename}</span>
+      <button class="remove-file-btn">✖</button>
+    `;
+    contextFilesList.appendChild(fileEntry);
+
+    fileEntry.querySelector('.remove-file-btn').addEventListener('click', () => {
+      fileEntry.remove();
+    });
+  };
+
+  const enhanceCodeBlocks = (container) => {
+    container.querySelectorAll('pre').forEach((pre) => {
+      // Evita adicionar o botão múltiplas vezes
+      if (pre.querySelector('.copy-code-btn')) return;
+
+      const code = pre.querySelector('code');
+      if (code) {
+        hljs.highlightElement(code);
+      }
+
+      const copyButton = document.createElement('button');
+      copyButton.className = 'copy-code-btn';
+      copyButton.textContent = 'Copiar';
+      pre.appendChild(copyButton);
+
+      copyButton.addEventListener('click', () => {
+        navigator.clipboard.writeText(code.textContent).then(() => {
+          copyButton.textContent = 'Copiado!';
+          setTimeout(() => { copyButton.textContent = 'Copiar'; }, 2000);
+        });
+      });
+    });
+  };
+
+  // --- Lógica do Input ---
+  if (messageInput) { // Adiciona verificação de existência
+    messageInput.addEventListener('input', () => {
+      // Habilita/desabilita o botão de envio
+      sendButton.disabled = messageInput.value.trim().length === 0;
+
+      // Auto-ajuste de altura
+      messageInput.style.height = 'auto';
+      messageInput.style.height = `${Math.min(messageInput.scrollHeight, 160)}px`;
+    });
+
+    // Permite enviar com Enter (e nova linha com Shift+Enter)
+    messageInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+  } else {
+    console.error("Elemento com ID 'message-input' não encontrado.");
+  }
+
+  // Carrega o histórico ao iniciar a página
+  loadHistory();
+  
+  // 3) Botão limpar histórico (defensivo)
+  if (clearHistoryBtn) {
+    clearHistoryBtn.addEventListener('click', deleteAllHistory);
+  } else {
+    console.warn('Elemento #clear-history-btn não encontrado.');
+  }
+
+  // --- Side Panel Logic ---
+  const historyPanel = document.getElementById("history-panel");
+  const agentPanel = document.getElementById("agent-panel");
+  const appGrid = document.querySelector(".app-grid");
+
+  if (toggleHistoryBtn && historyPanel) {
+    toggleHistoryBtn.addEventListener('click', () => {
+      appGrid.classList.toggle('history-collapsed');
+    });
+  }
+
+  if (toggleAgentBtn && agentPanel) {
+    toggleAgentBtn.addEventListener('click', () => {
+      appGrid.classList.toggle('agent-collapsed');
+    });
+  }
+
+  connectWebSocket();
+});
+--- File: assistant-tests/README.md ---
+[Extracted Price from CoinMarketCap]
+--- File: assistant-tests/config.ini ---
+versao=1.0
+
+--- File: assistant-tests/notas.txt ---
+linha1
+--- File: assistant-tests/sample.txt ---
+alpha
+beta
+beta gamma
+
+--- File: config.ini.template ---
+[assistant]
+# Modelo a ser usado pelo Ollama (ex: mistral, llama3)
+model = mistral
+# URL base do Ollama
+base_url = http://localhost:11434
+# Diretório raiz para operações de arquivo
+root_dir = ~/lori
+# Habilitar logs detalhados de ferramentas
+verbose = false
+
+[tools]
+# Lista de diretórios somente leitura permitidos fora da raiz (separados por vírgula)
+# Ex: /etc,/usr/share
+readonly_dirs =
+# Permitir leitura de qualquer arquivo no sistema (exceto denylist)
+global_read = false
+# Permitir escrita em qualquer lugar (perigoso)
+global_write = false
+# Lista de comandos de shell permitidos (separados por vírgula)
+# Ex: ls,cat,echo
+shell_allow = ls,cat,echo,git,ruff,black,pytest
+# Timeout em segundos para chamadas de rede e subprocessos
+timeout_secs = 60
+
+--- File: requirements.txt ---
+requests>=2.31.0
+beautifulsoup4>=4.12.2
+ddgs>=5.3.0
+black>=24.0.0
+ruff>=0.6.0
+pytest>=8.0.0
+PyMuPDF>=1.24.0
+python-multipart>=0.0.9
+
+--- File: run.sh ---
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Run from this script's directory so Python finds the package
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+MODEL="${ASSISTANT_MODEL:-mistral}"
+
+# Ensure local venv exists and dependencies are installed
+if [ ! -d .venv ]; then
+  echo "[bootstrap] creating venv at .venv"
+  python3 -m venv .venv
+fi
+
+PY=".venv/bin/python"
+PIP=".venv/bin/pip"
+
+if [ -f requirements.txt ]; then
+  if [ ! -f .venv/requirements.fingerprint ] || ! cmp -s requirements.txt .venv/requirements.fingerprint; then
+    echo "[bootstrap] installing/updating dependencies from requirements.txt"
+    "$PIP" install -r requirements.txt
+    cp requirements.txt .venv/requirements.fingerprint
+  fi
+fi
+
+"$PY" -m assistant_cli.cli --model "$MODEL" "$@"
+
+--- File: scripts/bootstrap.sh ---
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$SCRIPT_DIR"
+
+if [ ! -d .venv ]; then
+  echo "[bootstrap] creating venv at .venv"
+  python3 -m venv .venv
+fi
+
+PIP=".venv/bin/pip"
+if [ -f requirements.txt ]; then
+  echo "[bootstrap] installing dependencies"
+  "$PIP" install -r requirements.txt
+fi
+
+echo "[bootstrap] done. Activate with: source .venv/bin/activate"
+
+
+--- File: scripts/run_lori_tests.sh ---
+#!/usr/bin/env bash
+set -euo pipefail
+
+RUNNER="$HOME/workspace/assistant-cli/run.sh"
+if [ ! -x "$RUNNER" ]; then
+  echo "assistant-cli runner não encontrado: $RUNNER" >&2
+  exit 1
+fi
+
+SANDBOX="$HOME/workspace/assistant-tests"
+mkdir -p "$SANDBOX"
+cd "$SANDBOX"
+export ASSISTANT_ROOT="$SANDBOX"
+
+export ASSISTANT_VERBOSE=1
+
+echo "[test] criar e ler arquivo"
+"$RUNNER" "Crie um arquivo notas.txt com 'linha1' e depois leia o conteúdo."
+
+echo "[test] buscar termo"
+printf 'alpha\nbeta\nbeta gamma\n' > sample.txt
+"$RUNNER" "Procure por 'beta' no diretório atual e mostre as ocorrências."
+
+echo "[test] edição find/replace"
+echo 'versao=1.0' > config.ini
+"$RUNNER" "No arquivo config.ini, substitua '1.0' por '2.0' e confirme a mudança."
+
+# Git workflow via tools (init, config, commit, diff)
+echo "[test] git flow (init, status, commit, diff)"
+"$RUNNER" "Use estritamente as ferramentas. 1) shell.exec {cmd:'git init'}; 2) shell.exec {cmd:'git config user.email you@example.com'}; 3) shell.exec {cmd:'git config user.name you'}; 4) fs.write {path:'repo.txt', content:'linha repo'}; 5) git.status {}; 6) git.commit {message:'Teste via ferramentas', add_all:true}; 7) git.diff {staged:true}. Resuma o resultado."
+
+# Shell exec simple check
+echo "[test] shell.exec uname"
+"$RUNNER" "Execute shell.exec com cmd 'uname -a' e mostre a saída."
+
+# Web search and get (requires bs4)
+echo "[test] web.search + web.get (pode exigir bs4)"
+"$RUNNER" "Faça web.search {query:'Open WebUI tools', limit:2}; depois use web.get no primeiro link retornado e resuma o conteúdo extraído. Se a ferramenta web não estiver disponível, informe o erro retornado."
+
+echo "[test] git branches (create/switch/list)"
+"$RUNNER" "Use git.branch {action:'create', name:'feature/teste'}; depois git.branch {action:'switch', name:'feature/teste'}; por fim, git.branch {action:'list'}."
+
+echo "[test] format (black) + lint (ruff)"
+cat > sample.py << 'PY'
+import os,sys
+def f(x):
+  return 1+  2
+PY
+"$RUNNER" "Rode fmt.black {paths:['sample.py']}; depois rode lint.ruff {paths:['sample.py']}. Mostre o resultado do lint."
+
+echo "[done] veja os logs [tool_call]/[tool_result] acima"
+
+--- File: scripts/run_tests.sh ---
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Garante que o script seja executado a partir do diretório raiz do projeto
+cd "$(dirname "$0")/.."
+
+VENV_DIR=".venv"
+
+if [ ! -d "$VENV_DIR" ]; then
+  echo "Criando ambiente virtual em $VENV_DIR..."
+  python3 -m venv "$VENV_DIR"
+fi
+
+source "$VENV_DIR/bin/activate"
+
+echo "Instalando/atualizando dependências..."
+pip install -r requirements.txt
+
+if [[ "${1:-}" == "playwright" ]]; then
+  echo "Instalando Playwright e navegador..."
+  pip install playwright
+  playwright install chromium
+fi
+
+echo "Executando testes unitários..."
+python -m unittest -v assistant_cli/test_tools.py assistant_cli/test_agent.py
+echo "Testes concluídos."
+--- File: scripts/smoke.sh ---
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Garante que o script seja executado a partir do diretório raiz do projeto
+cd "$(dirname "$0")/.."
+
+RUNNER="./run.sh"
+if [ ! -x "$RUNNER" ]; then
+  echo "Runner não encontrado ou não executável: $RUNNER" >&2
+  exit 1
+fi
+
+export ASSISTANT_VERBOSE=1
+
+echo -e "\n--- Teste de Busca Web ---"
+"$RUNNER" "pesquisa na internet valor do dólar"
+
+echo -e "\n--- Teste de Heurística de Preço ---"
+"$RUNNER" "qual é o valor do bitcoin?"
+
+echo -e "\n--- Teste de Leitura de Arquivo ---"
+"$RUNNER" "leia o arquivo README.md e resuma em uma frase"
+--- File: scripts/test_tools.sh ---
+#!/usr/bin/env bash
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(dirname "$HERE")"
+
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+echo "[i] Using sandbox: $TMP_DIR"
+export ASSISTANT_ROOT="$TMP_DIR"
+
+cd "$TMP_DIR"
+
+echo "[i] fs.write"
+python -m assistant_cli.tools_cli fs.write --args-json '{"path":"notas.txt","content":"Primeira linha"}'
+
+echo "[i] fs.read"
+python -m assistant_cli.tools_cli fs.read --args-json '{"path":"notas.txt"}'
+
+printf 'alpha\nbeta\nbeta gamma\n' > sample.txt
+
+echo "[i] fs.search"
+python -m assistant_cli.tools_cli fs.search --args-json '{"query":"beta"}'
+
+echo 'versao=1.0' > config.ini
+echo "[i] edit.replace"
+python -m assistant_cli.tools_cli edit.replace --args-json '{"path":"config.ini","find":"1.0","replace":"2.0"}'
+
+echo "[i] git (init repo)"
+git init >/dev/null
+git config user.email you@example.com
+git config user.name you
+
+echo "[i] git.status"
+python -m assistant_cli.tools_cli git.status
+
+echo "[i] git.commit (add_all)"
+python -m assistant_cli.tools_cli git.commit --args-json '{"message":"Teste","add_all":true}'
+
+echo "[i] git.diff (staged)"
+python -m assistant_cli.tools_cli git.diff --args-json '{"staged":true}'
+
+echo "[i] Done."
+
+
+--- File: style.css ---
+:root{
+  --bg:#0e1117;
+  --panel:#161b22;
+  --panel-2:#0f141b;
+  --border:#262c36;
+  --text:#e6edf3;
+  --muted:#9aa4b2;
+  --accent:#4a90e2;
+  --accent-2:#357ABD;
+  --danger:#ff6166;
+  --radius:14px;
+  --shadow:0 6px 20px rgba(0,0,0,.25);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body {
+  margin:0;
+  background: var(--bg);
+  color: var(--text);
+  font:500 15px/1.55 Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+}
+
+.app-grid{
+  display:grid;
+  grid-template-columns: 280px minmax(0,1fr) 340px;
+  grid-template-rows: 100vh;
+  gap:0;
+  transition: grid-template-columns 0.3s ease-in-out;
+}
+
+.app-grid.history-collapsed {
+  grid-template-columns: 0 minmax(0,1fr) 340px;
+}
+
+.app-grid.agent-collapsed {
+  grid-template-columns: 280px minmax(0,1fr) 0;
+}
+
+/* ====== Sidebar esquerda ====== */
+.sidebar{
+  display:flex; flex-direction:column;
+  background:var(--panel);
+  border-right:1px solid var(--border);
+  min-width:240px;
+  overflow: hidden;
+}
+.sidebar-header{
+  display:flex; align-items:center; gap:.6rem;
+  padding:1rem .9rem; border-bottom:1px solid var(--border);
+}
+.sidebar h2{margin:0; font-size:14px; color:var(--muted); font-weight:600}
+.history-list{padding:.6rem; overflow:auto; height:100%}
+.history-entry{
+  background:var(--panel-2);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:.7rem .8rem;
+  margin-bottom:.6rem;
+  display:flex; align-items:center; justify-content:space-between; gap:.5rem;
+  cursor:pointer; transition:transform .08s ease, border .15s ease, background .15s ease;
+}
+.history-entry:hover{transform:translateY(-1px); border-color:#2d3642}
+.history-entry.active{outline:2px solid var(--accent)}
+.history-title{font-weight:600}
+.history-date{color:var(--muted); font-size:12px}
+.delete-icon{width:18px;height:18px;opacity:.65;cursor:pointer}
+
+/* ====== Chat ====== */
+.chat{display:flex; flex-direction:column; min-width:0}
+.chat-header{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:.8rem 1.2rem; border-bottom:1px solid var(--border); background:var(--panel);
+}
+.brand{display:flex; align-items:center; gap:.6rem; color:var(--muted); font-weight:700}
+.brand .dot{width:10px;height:10px;border-radius:50%;background:var(--accent)}
+
+.conversation{
+  flex:1; overflow:auto;
+  padding:1.2rem clamp(12px,2vw,24px);
+  display:flex; flex-direction:column; gap:12px;
+  background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent 80%);
+}
+
+.message-wrapper{display:flex; width:100%}
+.user-wrapper{justify-content:flex-end; align-items:flex-start; gap:10px;}
+.assistant-wrapper{justify-content:flex-start; align-items:flex-start; gap:10px;}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+.user-avatar { background-color: #7e57c2; color: white; }
+.assistant-avatar { background-color: var(--accent); color: white; }
+
+.message{
+  max-width: min(760px, 85%);
+  padding:12px 14px;
+  border-radius:14px;
+  box-shadow:var(--shadow);
+  animation: message-fade-in .3s ease-out;
+}
+.user-message{background:var(--accent); color:#fff; border:1px solid transparent}
+.assistant-message{background:var(--panel); border:1px solid var(--border)}
+.message strong{display:block; color:var(--muted); font-size:12px; margin-bottom:6px}
+
+/* typing indicator */
+.typing-indicator .dots{display:inline-flex; gap:6px}
+.typing-indicator .dots span{
+  width:6px; height:6px; border-radius:50%; background:var(--muted);
+  animation:bounce 1.2s infinite ease-in-out;
+}
+.typing-indicator .dots span:nth-child(2){animation-delay:.15s}
+.typing-indicator .dots span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{
+  0%,80%,100%{transform:translateY(0);opacity:.5}
+  40%{transform:translateY(-4px);opacity:1}
+}
+@keyframes message-fade-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ====== Composer ====== */
+.composer{
+  border-top:1px solid var(--border);
+  background:var(--panel);
+  padding:.8rem;
+  display:flex; flex-direction:column; gap:.6rem;
+}
+.attachments{display:flex; align-items:center; gap:.5rem; min-height:28px}
+.chips{display:flex; gap:.4rem; flex-wrap:wrap}
+.chips .context-file-entry{
+  background:var(--panel-2); color:var(--text);
+  border:1px solid var(--border); border-radius:999px;
+  padding:.2rem .6rem; font-size:12px; display:flex; align-items:center; gap:.4rem
+}
+.chips .remove-file-btn{background:none;border:none;color:var(--muted);cursor:pointer}
+
+.input-row{
+  display:flex; gap:.6rem; align-items:flex-end;
+  background:var(--panel-2); border:1px solid var(--border); border-radius:var(--radius);
+  padding:.5rem .6rem;
+}
+#message-input{
+  flex:1; min-height:36px; max-height:160px; resize:none;
+  background:transparent; color:var(--text); border:none; outline:none;
+  font:inherit;
+}
+#send-button{
+  min-width:44px; height:36px; border-radius:10px;
+}
+
+/* ====== Painel direito ====== */
+.right-panel{
+  background:var(--panel);
+  border-left:1px solid var(--border);
+  display:flex; flex-direction:column;
+  overflow: hidden;
+}
+.right-panel h3{
+  margin:0; padding:1rem; border-bottom:1px solid var(--border);
+  color:var(--muted); font-weight:700; font-size:14px;
+}
+.agent-log{padding:.8rem; overflow:auto; height:100%}
+.agent-log .agent-log-entry{
+  background:var(--panel-2); border:1px solid var(--border); border-radius:10px;
+  padding:.6rem .7rem; margin-bottom:.6rem; font-size:13px;
+}
+.agent-log-entry.error{border-color: #8b2b2f; background: #1b1111}
+.agent-log-entry.thought{border-style:dashed}
+
+/* ====== Botões ====== */
+.btn{
+  border:none; padding:.5rem .8rem; cursor:pointer; border-radius:10px;
+  background:#2a313b; color:var(--text); transition:.2s;
+}
+.btn:hover{filter:brightness(1.1)}
+.btn-primary{background:var(--accent); color:#fff}
+.btn-primary:hover{background:var(--accent-2)}
+.icon-btn{
+  border:1px solid var(--border); background:var(--panel-2);
+  color:var(--text); border-radius:10px; padding:.45rem .55rem; cursor:pointer;
+}
+.icon-btn:hover{border-color:#344050}
+.chip{
+  background:transparent; color:var(--muted);
+  border:1px solid var(--border); padding:.35rem .6rem;
+  border-radius:999px; cursor:pointer;
+}
+.chat-header .icon-btn {
+  display: none; /* Escondido por padrão em telas grandes */
+}
+
+/* ====== Responsivo ====== */
+@media (max-width: 1200px){
+  .app-grid{grid-template-columns: 280px 1fr 0 !important}
+  .right-panel{display:none}
+}
+@media (max-width: 880px){
+  .app-grid{grid-template-columns: 0 1fr 0 !important}
+  .sidebar{display:none}
+  .chat-header .icon-btn {
+    display: inline-flex; /* Mostra os botões de menu em telas menores */
+  }
+  .app-grid.history-collapsed {
+    grid-template-columns: 280px 1fr 0 !important;
+  }
+}
