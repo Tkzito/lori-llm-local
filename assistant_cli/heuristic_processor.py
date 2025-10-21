@@ -527,6 +527,36 @@ class HeuristicProcessor:
                         self.agent.add_user("Falha ao consultar a CoinGecko; tentando fontes alternativas.")
                     continue
 
+                if c.get("tool") == "crypto.multi_price" and isinstance(result, dict):
+                    if result.get("ok"):
+                        asset = (result.get("asset") or (c.get("args") or {}).get("asset") or "BTC").upper()
+                        currency = (result.get("currency") or "USD").upper()
+                        self.agent._last_asset = asset.lower()
+                        self.agent._last_price_vs = [currency.lower()]
+
+                        table = result.get("table") or ""
+                        collected = result.get("collected_at")
+                        errors = result.get("errors") or []
+
+                        lines: list[str] = [f"Preços do {asset} em {currency}:"]
+                        if table:
+                            lines.append("")
+                            lines.append(table)
+                        if collected:
+                            lines.append("")
+                            lines.append(f"Coletado em: {collected}")
+                        if errors:
+                            falhas = ", ".join(err.get("source") for err in errors if err.get("source"))
+                            if falhas:
+                                lines.append(f"Fontes indisponíveis: {falhas}.")
+
+                        final = "\n".join(lines).strip()
+                        self.agent.add_assistant(final)
+                        return final
+                    else:
+                        self.agent.add_user("Não consegui obter preços agregados agora.")
+                        continue
+
                 if c.get("tool") == "fx.rate" and isinstance(result, dict):
                     if result.get("ok"):
                         base = result.get("base") or (c.get("args") or {}).get("base") or "USD"
